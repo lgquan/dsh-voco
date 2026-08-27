@@ -69,7 +69,7 @@ const STATUS_KEYS: Record<VoiceDelegationChatData['status'], VoiceKey> = {
   interrupted: 'task.status.interrupted',
 }
 
-/** Render the minimum one-way link from a Voice Session to its independent DSH task. */
+/** Render the task link from a Voice Session to its bound background Agent Session. */
 export function VoiceDelegationView({ node, sessionId, useSessions, useVoice, openSession, cancelTask, t }: VoiceDelegationViewProps) {
   const [expanded, setExpanded] = useState(false)
   const navigable = useSessions(sessions => sessions.ids.includes(node.data.taskSessionId))

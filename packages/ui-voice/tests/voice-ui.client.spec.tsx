@@ -316,6 +316,14 @@ describe('Voice UI surfaces', () => {
     ]))} />)
     fireEvent.click(screen.getByRole('button', { name: '打开任务' }))
     expect(openSession).toHaveBeenCalledWith(TASK_SESSION)
+
+    for (const status of ['completed', 'failed', 'cancelled', 'interrupted'] as const) {
+      view.rerender(<VoiceDelegationView
+        {...absent}
+        node={{ ...node, data: { ...node.data, status } }}
+      />)
+      expect(screen.queryByRole('button', { name: '取消任务' })).toBeNull()
+    }
   })
 
   it('attaches Voice Mode to the current Session and controls the active transport', () => {
