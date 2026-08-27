@@ -1,4 +1,4 @@
-import { VoiceResponseId, VoiceSessionId } from '@lgquan/dsh-voice'
+import { VoiceResponseId, VoiceSessionId, VoiceTaskId } from '@lgquan/dsh-voice'
 import { describe, expect, it, vi } from 'vitest'
 import { LocalSession } from '../src/index.ts'
 import type { SpeechBackend, SpeechBackendEvent } from '../src/speech-backend.ts'
@@ -73,5 +73,40 @@ describe('LocalSession', () => {
     }]))
     expect(events.filter(event => (event as { type?: string }).type === 'task.command')).toHaveLength(1)
     expect(session.interactionMode).toBe('frontend-agent')
+
+    const firstCommand = events.find(event => (event as { type?: string }).type === 'task.command') as {
+      call: { id: never }
+    }
+    session.completeTaskCommand(firstCommand.call.id, { kind: 'accepted', taskId: VoiceTaskId('task-fixed') })
+    backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-4', text: '再检查测试' })
+    expect(events.at(-1)).toMatchObject({
+      type: 'task.command',
+      call: { command: { type: 'send_task_message', taskId: 'task-fixed', message: '再检查测试' } },
+    })
+
+    session.appendTaskObservation({ taskId: VoiceTaskId('task-fixed'), status: 'completed' })
+    backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-5', text: '开始下一项' })
+    expect(events.at(-1)).toMatchObject({
+      type: 'task.command',
+      call: { command: { type: 'realtime_delegation', input: '开始下一项' } },
+    })
+  })
+
+  it('projects exactly the same response text into the UI text stream and TTS', () => {
+    const backend = new MemoryBackend()
+    const events: unknown[] = []
+    const session = new LocalSession(backend, event => events.push(event), VoiceSessionId('voice-output'))
+    session.appendTaskObservation({
+      taskId: VoiceTaskId('task-output'),
+      status: 'completed',
+      voiceMessage: { id: 'message-output' as never, text: '第一句完成。第二句请确认。' },
+    })
+    session.requestResponse({ kind: 'automatic' })
+
+    expect(events.find(event => (event as { type?: string }).type === 'output_text.done')).toMatchObject({
+      type: 'output_text.done',
+      text: '第一句完成。第二句请确认。',
+    })
+    expect(backend.synthesize).toHaveBeenCalledWith(expect.any(String), '第一句完成。第二句请确认。')
   })
 })

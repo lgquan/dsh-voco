@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import {
   VoiceCommandCallId,
   VoiceResponseId,
+  VoiceTaskId,
   VoiceUtteranceId,
+  type TaskCommand,
   type TaskObservation,
   type TaskCommandResult,
   type VoiceInteractionMode,
@@ -20,6 +22,8 @@ export class LocalSession implements VoiceProviderSession {
   private closed = false
   private readonly pending: string[] = []
   private readonly pendingSpeech: string[] = []
+  private readonly pendingCommands = new Map<VoiceCommandCallId, TaskCommand>()
+  private activeTaskId: VoiceTaskId | undefined
   private activeResponseId: VoiceResponseId | undefined
 
   constructor(
@@ -47,6 +51,9 @@ export class LocalSession implements VoiceProviderSession {
   appendTaskObservation(event: TaskObservation): void {
     const text = event.voiceMessage?.text.trim() || event.announcement?.trim()
     if (text !== undefined && text !== '') this.pending.push(text)
+    if (event.taskId === this.activeTaskId && isTerminalTaskStatus(event.status)) {
+      this.activeTaskId = undefined
+    }
   }
 
   appendSpeechText(text: string): void {
@@ -58,13 +65,26 @@ export class LocalSession implements VoiceProviderSession {
     const text = [...this.pending.splice(0), ...this.pendingSpeech.splice(0)].join('\n')
     if (text === '') return
     const responseId = VoiceResponseId(String(this.voiceSessionId) + ':response:' + randomUUID())
+    const utteranceId = VoiceUtteranceId(String(responseId) + ':text')
     this.activeResponseId = responseId
+    this.emit({ type: 'output_text.started', utteranceId, responseId })
+    this.emit({ type: 'output_text.delta', utteranceId, responseId, text })
+    this.emit({ type: 'output_text.done', utteranceId, responseId, text })
     this.backend.synthesize(String(responseId), text)
   }
 
-  completeTaskCommand(_callId: VoiceCommandCallId, _result: TaskCommandResult): void {
+  completeTaskCommand(callId: VoiceCommandCallId, result: TaskCommandResult): void {
     if (this.interactionMode === 'speech-shell') {
       throw new Error('local speech-shell sessions do not accept task commands')
+    }
+    const command = this.pendingCommands.get(callId)
+    if (command === undefined) return
+    this.pendingCommands.delete(callId)
+    if (result.kind === 'accepted' && command.type === 'realtime_delegation') {
+      this.activeTaskId = result.taskId
+    } else if (result.kind === 'rejected' && command.type === 'send_task_message'
+      && (result.code === 'task_not_active' || result.code === 'task_not_found')) {
+      this.activeTaskId = undefined
     }
   }
 
@@ -83,13 +103,10 @@ export class LocalSession implements VoiceProviderSession {
         const utteranceId = VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId)
         this.emit({ type: 'transcription.completed', utteranceId, text: event.text })
         if (this.interactionMode === 'frontend-agent' && event.text.trim() !== '') {
-          this.emit({
-            type: 'task.command',
-            call: {
-              id: VoiceCommandCallId(String(this.voiceSessionId) + ':task:' + randomUUID()),
-              command: { type: 'realtime_delegation', input: event.text.trim() },
-            },
-          })
+          const text = event.text.trim()
+          this.emitTaskCommand(this.activeTaskId === undefined
+            ? { type: 'realtime_delegation', input: text }
+            : { type: 'send_task_message', taskId: this.activeTaskId, message: text })
         }
         return
       }
@@ -117,4 +134,14 @@ export class LocalSession implements VoiceProviderSession {
       ? value
       : String(this.voiceSessionId) + ':response:' + value)
   }
+
+  private emitTaskCommand(command: TaskCommand): void {
+    const id = VoiceCommandCallId(String(this.voiceSessionId) + ':task:' + randomUUID())
+    this.pendingCommands.set(id, command)
+    this.emit({ type: 'task.command', call: { id, command } })
+  }
+}
+
+function isTerminalTaskStatus(status: TaskObservation['status']): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'interrupted'
 }
