@@ -17,8 +17,6 @@ export interface Config {
   readonly inputSampleRate?: number
   readonly outputSampleRate?: number
   readonly threads?: number
-  readonly voice?: string
-  readonly maxTtsFrames?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -27,8 +25,6 @@ export const Config: z<Config> = z.object({
   inputSampleRate: z.natural().min(1).default(16_000),
   outputSampleRate: z.natural().min(1).default(48_000),
   threads: z.natural().min(1).default(4),
-  voice: z.string().default('Junhao'),
-  maxTtsFrames: z.natural().min(1),
 })
 
 const PACKAGE_ROOT = dirname(fileURLToPath(import.meta.url))
@@ -54,8 +50,6 @@ export function apply(ctx: Context, config: Config = {}): () => void {
         inputSampleRate: config.inputSampleRate ?? 16_000,
         outputSampleRate: config.outputSampleRate ?? 48_000,
         threads: config.threads ?? 4,
-        voice: config.voice ?? 'Junhao',
-        ...(config.maxTtsFrames === undefined ? {} : { maxTtsFrames: config.maxTtsFrames }),
       })
       const session = new LocalSession(backend, emit, voiceSessionId)
       try {

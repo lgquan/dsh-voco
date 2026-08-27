@@ -12,7 +12,6 @@
         inputSampleRate: 16000
         outputSampleRate: 48000
         threads: 4
-        voice: Junhao
 
     - id: voice-assistant
       name: '@lgquan/dsh-voice-assistant'

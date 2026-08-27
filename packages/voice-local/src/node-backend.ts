@@ -2,13 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import type { VoiceAudioProfile } from '@lgquan/dsh-voice'
 import { assertModelsInstalled, createModelLayout, type LocalModelLayout } from './model-layout.ts'
-import { MossTts } from './moss-tts.ts'
+import { splitSpeechText, synthesizeEdgeSpeech } from './edge-tts.ts'
 import type { SpeechBackend, SpeechBackendEvent } from './speech-backend.ts'
 
 const INPUT_SAMPLE_RATE = 16_000
 const VAD_WINDOW_SIZE = 512
 const ASR_CHUNK_SAMPLES = 9_600
-const TTS_CHUNK_SAMPLES = 12_000
 
 export interface NodeSpeechConfig {
   readonly modelRoot: string
@@ -16,8 +15,6 @@ export interface NodeSpeechConfig {
   readonly inputSampleRate: number
   readonly outputSampleRate: number
   readonly threads: number
-  readonly voice: string
-  readonly maxTtsFrames?: number
 }
 
 /** In-process Node/ONNX adapter; model details remain behind SpeechBackend. */
@@ -26,7 +23,6 @@ export class NodeSpeechBackend implements SpeechBackend {
   private emit: ((event: SpeechBackendEvent) => void) | undefined
   private vad: import('sherpa-onnx-node').Vad | undefined
   private recognizer: import('sherpa-onnx-node').OnlineRecognizer | undefined
-  private tts: MossTts | undefined
   private buffered = new Float32Array()
   private activeUtteranceId: string | undefined
   private recognitionQueue: Promise<void> = Promise.resolve()
@@ -36,7 +32,7 @@ export class NodeSpeechBackend implements SpeechBackend {
 
   constructor(private readonly config: NodeSpeechConfig) {
     if (config.inputSampleRate !== INPUT_SAMPLE_RATE) throw new Error('local ONNX speech requires 16000 Hz microphone audio')
-    this.audio = { inputSampleRate: config.inputSampleRate, outputSampleRate: config.outputSampleRate, format: 'pcm_s16le' }
+    this.audio = { inputSampleRate: config.inputSampleRate, outputSampleRate: config.outputSampleRate, format: 'audio_mpeg' }
   }
 
   async start(emit: (event: SpeechBackendEvent) => void): Promise<void> {
@@ -83,23 +79,21 @@ export class NodeSpeechBackend implements SpeechBackend {
     const generation = ++this.synthesisGeneration
     this.synthesisQueue = this.synthesisQueue.catch(() => {}).then(async () => {
       if (generation !== this.synthesisGeneration || this.closed) return
-      const tts = this.tts
-      if (tts === undefined) return
       this.emit?.({ type: 'tts.started', responseId })
       try {
-        await tts.synthesizeStreaming(text, () => generation !== this.synthesisGeneration || this.closed, (pcm) => {
+        for (const sentence of splitSpeechText(text)) {
           if (generation !== this.synthesisGeneration || this.closed) return
-          for (let offset = 0; offset < pcm.length; offset += TTS_CHUNK_SAMPLES) {
-            if (generation !== this.synthesisGeneration || this.closed) return
-            const chunk = pcm.subarray(offset, Math.min(offset + TTS_CHUNK_SAMPLES, pcm.length))
-            this.emit?.({ type: 'tts.delta', responseId, audio: pcmBytes(chunk) })
-          }
-        })
+          const audio = await synthesizeEdgeSpeech(sentence)
+          if (generation !== this.synthesisGeneration || this.closed) return
+          // Each delta must remain a complete MP3 file. The browser decoder cannot
+          // decode arbitrary slices from the middle of an encoded stream.
+          this.emit?.({ type: 'tts.delta', responseId, audio })
+        }
         if (generation !== this.synthesisGeneration || this.closed) return
         this.emit?.({ type: 'tts.done', responseId })
       } catch (error: unknown) {
         if (generation === this.synthesisGeneration && !this.closed) {
-          this.emit?.({ type: 'error', message: 'local MOSS TTS failed: ' + errorMessage(error) })
+          this.emit?.({ type: 'error', message: 'Edge TTS failed: ' + errorMessage(error) })
         }
       }
     })
@@ -113,15 +107,12 @@ export class NodeSpeechBackend implements SpeechBackend {
     this.synthesisGeneration += 1
     this.vad?.clear()
     await Promise.allSettled([this.recognitionQueue, this.synthesisQueue])
-    await this.tts?.close()
     this.emit?.({ type: 'closed', reason: 'local ONNX backend closed' })
     this.emit = undefined
   }
 
   private async loadModels(layout: LocalModelLayout): Promise<void> {
     const threads = Math.max(1, this.config.threads)
-    // MOSS imports onnxruntime-node statically. Load sherpa afterwards because
-    // both native packages carry an ONNX Runtime DLL on Windows.
     const nativeModule = ['sherpa', 'onnx', 'node'].join('-')
     const sherpa = createRequire(import.meta.url)(nativeModule) as typeof import('sherpa-onnx-node').default
     this.vad = new sherpa.Vad({
@@ -135,8 +126,6 @@ export class NodeSpeechBackend implements SpeechBackend {
         tokens: layout.asrTokens, numThreads: threads, provider: 'cpu', debug: 0,
       },
     })
-    this.tts = await MossTts.create({ ttsDir: layout.mossTts, codecDir: layout.mossCodec,
-      voice: this.config.voice, threads, ...(this.config.maxTtsFrames === undefined ? {} : { maxFrames: this.config.maxTtsFrames }) })
   }
 
   private processVadWindow(window: Float32Array): void {
@@ -197,12 +186,6 @@ export class NodeSpeechBackend implements SpeechBackend {
 function pcm16ToFloat(bytes: Uint8Array): Float32Array {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   return Float32Array.from({ length: bytes.byteLength / 2 }, (_, index) => view.getInt16(index * 2, true) / 32768)
-}
-
-function pcmBytes(pcm: Int16Array): Uint8Array {
-  const bytes = new Uint8Array(pcm.byteLength)
-  bytes.set(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength))
-  return bytes
 }
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error) }

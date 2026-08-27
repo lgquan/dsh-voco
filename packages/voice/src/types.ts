@@ -91,7 +91,7 @@ export interface VoiceConversationMemory {
 export interface VoiceAudioProfile {
   readonly inputSampleRate: number
   readonly outputSampleRate: number
-  readonly format: 'pcm_s16le'
+  readonly format: 'pcm_s16le' | 'audio_mpeg'
 }
 
 /** Policy deciding when pending observations become a spoken response. */

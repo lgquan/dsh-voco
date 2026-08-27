@@ -32,7 +32,7 @@ interface VoiceReadyEvent {
   readonly audio: {
     readonly inputSampleRate: number
     readonly outputSampleRate: number
-    readonly format: 'pcm_s16le'
+    readonly format: 'pcm_s16le' | 'audio_mpeg'
   }
   readonly interactionMode: 'speech-shell' | 'frontend-agent'
 }
@@ -256,8 +256,12 @@ async function openVoiceTransport(
   let socketClosed = false
   let ready = false
   let outputDone = false
+  let encodedPending = 0
+  let playbackGeneration = 0
+  let encodedQueue: Promise<void> = Promise.resolve()
   let inputSampleRate = 16_000
   let outputSampleRate = 24_000
+  let audioFormat: VoiceReadyEvent['audio']['format'] = 'pcm_s16le'
   let playAt = outputContext.currentTime
   const chunks: number[] = []
   const playing = new Set<AudioBufferSourceNode>()
@@ -286,6 +290,9 @@ async function openVoiceTransport(
   }
 
   const stopPlayback = (): void => {
+    playbackGeneration += 1
+    encodedPending = 0
+    encodedQueue = Promise.resolve()
     for (const node of playing) {
       try { node.stop() } catch { /* a completed source is already stopped */ }
     }
@@ -294,7 +301,7 @@ async function openVoiceTransport(
     outputDone = false
   }
   const notifyPlaybackEnded = (): void => {
-    if (outputDone && playing.size === 0 && socket.readyState === WebSocket.OPEN) {
+    if (outputDone && encodedPending === 0 && playing.size === 0 && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'playback.ended' }))
       outputDone = false
       handlers.onPlaybackEnded()
@@ -303,7 +310,30 @@ async function openVoiceTransport(
   const onMessage = (message: MessageEvent): void => {
     if (!ready) return
     if (message.data instanceof ArrayBuffer) {
-      schedulePcm(outputContext, message.data, outputSampleRate, playing, notifyPlaybackEnded, (value) => { playAt = value }, playAt)
+      if (audioFormat === 'audio_mpeg') {
+        const generation = playbackGeneration
+        encodedPending += 1
+        encodedQueue = encodedQueue.catch(() => {}).then(() => scheduleEncoded(
+          outputContext,
+          message.data,
+          playing,
+          notifyPlaybackEnded,
+          (value) => { playAt = value },
+          () => playAt,
+          () => generation === playbackGeneration && !stopped,
+        )).catch(error => {
+          if (generation === playbackGeneration && !stopped) {
+            handlers.onEvent({ type: 'error', message: `audio decode failed: ${String(error)}` })
+          }
+        }).finally(() => {
+          if (generation === playbackGeneration) {
+            encodedPending -= 1
+            notifyPlaybackEnded()
+          }
+        })
+      } else {
+        schedulePcm(outputContext, message.data, outputSampleRate, playing, notifyPlaybackEnded, (value) => { playAt = value }, playAt)
+      }
       handlers.onBinary(message.data)
       return
     }
@@ -331,6 +361,7 @@ async function openVoiceTransport(
     const readyEvent = await socketReady(socket, signal)
     inputSampleRate = readyEvent.audio.inputSampleRate
     outputSampleRate = readyEvent.audio.outputSampleRate
+    audioFormat = readyEvent.audio.format
     ready = true
     const captured = await microphone(signal)
     if (openingStopped(signal, stopped)) {
@@ -512,7 +543,7 @@ function parseReady(value: unknown): VoiceReadyEvent {
   const audio = recordOf(event.audio)
   if (audio?.inputSampleRate !== 16_000
     || (audio.outputSampleRate !== 24_000 && audio.outputSampleRate !== 48_000)
-    || audio.format !== 'pcm_s16le') {
+    || (audio.format !== 'pcm_s16le' && audio.format !== 'audio_mpeg')) {
     throw new Error('voice websocket ready event has unsupported audio settings')
   }
   if (event.interactionMode !== 'speech-shell' && event.interactionMode !== 'frontend-agent') {
@@ -521,7 +552,7 @@ function parseReady(value: unknown): VoiceReadyEvent {
   return { type: 'ready', voiceSessionId, audio: {
     inputSampleRate: audio.inputSampleRate,
     outputSampleRate: audio.outputSampleRate,
-    format: 'pcm_s16le',
+    format: audio.format,
   }, interactionMode: event.interactionMode }
 }
 
@@ -588,6 +619,27 @@ function schedulePcm(
   node.buffer = buffer
   node.connect(context.destination)
   const start = Math.max(currentPlayAt, context.currentTime)
+  setPlayAt(start + buffer.duration)
+  playing.add(node)
+  node.onended = () => { playing.delete(node); ended() }
+  node.start(start)
+}
+
+async function scheduleEncoded(
+  context: AudioContext,
+  bytes: ArrayBuffer,
+  playing: Set<AudioBufferSourceNode>,
+  ended: () => void,
+  setPlayAt: (value: number) => void,
+  getPlayAt: () => number,
+  shouldSchedule: () => boolean,
+): Promise<void> {
+  const buffer = await context.decodeAudioData(bytes.slice(0))
+  if (!shouldSchedule()) return
+  const node = context.createBufferSource()
+  node.buffer = buffer
+  node.connect(context.destination)
+  const start = Math.max(getPlayAt(), context.currentTime)
   setPlayAt(start + buffer.duration)
   playing.add(node)
   node.onended = () => { playing.delete(node); ended() }

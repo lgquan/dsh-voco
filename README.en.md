@@ -8,7 +8,7 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 
 ## Interaction
 
-- **Local real-time speech**: browser audio is handled by local Silero VAD, streaming Paraformer ONNX, and MOSS-TTS-Nano ONNX, with interruption support.
+- **Real-time voice conversation**: browser audio uses local Silero VAD and streaming Paraformer ONNX, while replies use Edge TTS's Chinese Xiaoxiao voice with interruption support.
 - **Conversational delegation**: the frontend exposes exactly three orchestration tools — `realtime_delegation` (turn "check this for me" into a real background task), `send_task_message` (add or correct requirements), and `cancel_task`.
 - **Continuous task context**: sequential delegations reuse one background Agent Session while retaining distinct delegation ids.
 - **Asynchronous result backfill**: progress (STATUS) and a spoken result (COMPLETE) flow back into the voice conversation, with adaptive detail and no fixed character cap.
@@ -34,7 +34,7 @@ dsh web
 
 ## Local speech environment
 
-`pnpm install` automatically runs the cross-platform model installer. Silero VAD, bilingual streaming Paraformer, and MOSS-TTS-Nano ONNX assets are stored under `speech/models`; runtime only loads those local files and never downloads models while starting `dsh web`. The installer is idempotent and can be rerun with `pnpm run setup:voice-local`.
+`pnpm install` automatically runs the cross-platform model installer. Silero VAD and bilingual streaming Paraformer assets are stored under `speech/models`; replies use Edge TTS voice `zh-CN-XiaoxiaoNeural`. The installer is idempotent and can be rerun with `pnpm run setup:voice-local`.
 
 The speech runtime uses TypeScript/Node and prebuilt ONNX native packages only. Python, pip, virtual environments, and PyTorch are not required. Windows x64, macOS Intel, and macOS Apple Silicon are supported.
 

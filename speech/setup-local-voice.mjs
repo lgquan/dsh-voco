@@ -13,14 +13,6 @@ const FILES = [
   ['asr/paraformer/encoder.int8.onnx', `${HF}/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/main/encoder.int8.onnx`],
   ['asr/paraformer/decoder.int8.onnx', `${HF}/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/main/decoder.int8.onnx`],
   ['asr/paraformer/tokens.txt', `${HF}/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/main/tokens.txt`],
-  ...mossFiles('OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX', 'tts/MOSS-TTS-Nano-100M-ONNX', [
-    'browser_poc_manifest.json', 'tts_browser_onnx_meta.json', 'tokenizer.model',
-    'moss_tts_prefill.onnx', 'moss_tts_decode_step.onnx', 'moss_tts_local_fixed_sampled_frame.onnx',
-    'moss_tts_global_shared.data', 'moss_tts_local_shared.data',
-  ]),
-  ...mossFiles('OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX', 'tts/MOSS-Audio-Tokenizer-Nano-ONNX', [
-    'codec_browser_onnx_meta.json', 'moss_audio_tokenizer_decode_full.onnx', 'moss_audio_tokenizer_decode_shared.data',
-  ]),
 ]
 
 console.log(`Preparing local ONNX voice models under ${ROOT}`)
@@ -36,10 +28,6 @@ for (let index = 0; index < FILES.length; index += 1) {
   await download(url, destination)
 }
 console.log('Local voice models are ready. Python, pip, Torch, and virtual environments are not required.')
-
-function mossFiles(repository, directory, names) {
-  return names.map(name => [`${directory}/${name}`, `${HF}/${repository}/resolve/main/${name}`])
-}
 
 async function nonEmpty(file) {
   try { return (await stat(file)).size > 0 }

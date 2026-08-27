@@ -24,8 +24,8 @@ class FakeSocket extends EventTarget {
     this.dispatchEvent(new Event('open'))
   }
 
-  ready(): void {
-    this.json(readyPayload())
+  ready(overrides: Record<string, unknown> = {}): void {
+    this.json(readyPayload(overrides))
   }
 
   send(value: unknown): void { this.sent.push(value) }
@@ -72,6 +72,7 @@ class FakeAudioContext {
   readonly sources: FakeBufferSource[] = []
   readonly resume = vi.fn().mockResolvedValue(undefined)
   readonly close = vi.fn().mockResolvedValue(undefined)
+  readonly decodeAudioData = vi.fn(async (_bytes: ArrayBuffer) => ({ duration: 1 }))
 
   constructor() { contexts.push(this) }
 
@@ -141,12 +142,12 @@ beforeEach(() => {
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-async function start(controller: VoiceController): Promise<FakeSocket> {
+async function start(controller: VoiceController, readyOverrides: Record<string, unknown> = {}): Promise<FakeSocket> {
   const opening = controller.start(SESSION)
   await vi.waitFor(() => { expect(sockets).toHaveLength(1) })
   sockets[0]!.open()
   await Promise.resolve()
-  sockets[0]!.ready()
+  sockets[0]!.ready(readyOverrides)
   await opening
   return sockets[0]!
 }
@@ -543,6 +544,30 @@ describe('VoiceController', () => {
     expect(controller.getSnapshot()).toEqual({ state: 'off', textById: {} })
     expect(track.stop).toHaveBeenCalledTimes(1)
     expect(contexts.every(context => context.close.mock.calls.length === 1)).toBe(true)
+  })
+
+  it('decodes complete MP3 frames in order before reporting playback ended', async () => {
+    const controller = new VoiceController()
+    const socket = await start(controller, {
+      audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'audio_mpeg' },
+    })
+    socket.json({ type: 'output_audio.started', responseId: 'response-mp3' })
+    socket.binary(new Uint8Array([0x49, 0x44, 0x33, 1]).buffer)
+    socket.binary(new Uint8Array([0x49, 0x44, 0x33, 2]).buffer)
+    socket.json({ type: 'output_audio.done', responseId: 'response-mp3' })
+
+    const output = contexts[1]!
+    await vi.waitFor(() => { expect(output.decodeAudioData).toHaveBeenCalledTimes(2) })
+    expect(output.sources).toHaveLength(2)
+    expect(output.sources[0]!.start).toHaveBeenCalledWith(1)
+    expect(output.sources[1]!.start).toHaveBeenCalledWith(2)
+    expect(socket.sent).not.toContain(JSON.stringify({ type: 'playback.ended' }))
+
+    output.sources[0]!.onended?.()
+    expect(socket.sent).not.toContain(JSON.stringify({ type: 'playback.ended' }))
+    output.sources[1]!.onended?.()
+    expect(socket.sent).toContain(JSON.stringify({ type: 'playback.ended' }))
+    await controller.stop()
   })
 
   it('stops queued audio on barge-in and reports unexpected close and provider errors', async () => {
