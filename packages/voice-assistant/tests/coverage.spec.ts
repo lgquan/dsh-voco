@@ -907,7 +907,7 @@ describe('voice assistant branch coverage', () => {
     })
   })
 
-  it('includes only the last spoken progress hint in the interruption recovery message', async () => {
+  it('does not turn silent progress into an interruption recovery hint', async () => {
     const harness = makeHarness({ taskSessionPolicy: 'continuous' })
     const sourceId = SessionId('progress-shutdown-source')
     const source = harness.makeSession(sourceId)
@@ -926,7 +926,7 @@ describe('voice assistant branch coverage', () => {
       event.type === 'voice/task-observation' && event.data.status === 'interrupted'
     ))
     expect(interrupted?.type === 'voice/task-observation' ? interrupted.data.announcement : undefined)
-      .toBe('上次任务在“任务正在处理中。”之后因服务关闭而中断，没有自动重放。你可以告诉我是否继续。')
+      .toBe('上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。')
     expect(interrupted?.type === 'voice/task-observation' ? interrupted.data.announcement : undefined)
       .not.toContain('Sensitive command output')
   })
