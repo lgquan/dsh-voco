@@ -296,8 +296,13 @@ describe('Voice UI surfaces', () => {
       useSessions: (selector: (state: SessionListState) => unknown) => selector(listState()),
     } as unknown as VoiceDelegationViewProps
     const view = render(<VoiceDelegationView {...absent} />)
-    expect(screen.getByText('正在执行')).toBeTruthy()
+    expect(screen.queryByText('正在执行')).toBeNull()
     expect(screen.getByText('执行中')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '展开摘要' }))
+    expect(screen.getByText('检查构建')).toBeTruthy()
+    expect(screen.getByText('正在执行')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '收起摘要' }))
+    expect(screen.queryByText('正在执行')).toBeNull()
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '打开任务' }).disabled).toBe(true)
     view.rerender(<VoiceDelegationView {...absent} useSessions={selector => selector(listState([
       VOICE_SESSION, TASK_SESSION,

@@ -94,6 +94,7 @@
 .taskCard[data-status='completed'] .taskDot { background: var(--dsw-alias-state-success-primary); }
 .taskCard[data-status='failed'] .taskDot { background: var(--dsw-alias-state-error-primary); }
 .taskCard[data-status='cancelled'] .taskDot { background: var(--dsw-alias-state-warn-primary); }
+.taskCard[data-status='interrupted'] .taskDot { background: var(--dsw-alias-state-warn-primary); }
 
 .taskTitle {
   overflow: hidden;
@@ -125,8 +126,16 @@
 .taskInput { color: var(--dsw-alias-label-primary); }
 .taskUpdate { color: var(--dsw-alias-label-secondary); }
 
-.taskLink {
+.taskDetails { margin-top: 6px; }
+
+.taskActions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
   margin-top: 8px;
+}
+
+.taskLink {
   padding: 0;
   border: 0;
   background: transparent;

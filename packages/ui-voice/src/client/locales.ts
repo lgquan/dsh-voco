@@ -34,6 +34,8 @@ export const zh = {
   'task.status.failed': '失败',
   'task.status.cancelled': '已取消',
   'task.status.interrupted': '服务中断',
+  'task.expand': '展开摘要',
+  'task.collapse': '收起摘要',
   'task.open': '打开任务',
 } satisfies Record<string, string>
 
@@ -71,5 +73,7 @@ export const en = {
   'task.status.failed': 'Failed',
   'task.status.cancelled': 'Cancelled',
   'task.status.interrupted': 'Interrupted',
+  'task.expand': 'Show summary',
+  'task.collapse': 'Hide summary',
   'task.open': 'Open task',
 } satisfies Record<VoiceKey, string>

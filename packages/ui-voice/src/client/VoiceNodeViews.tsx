@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { VoiceClientSnapshot } from './voice-controller.ts'
@@ -66,6 +67,7 @@ const STATUS_KEYS: Record<VoiceDelegationChatData['status'], VoiceKey> = {
 
 /** Render the minimum one-way link from a Voice Session to its independent DSH task. */
 export function VoiceDelegationView({ node, useSessions, openSession, t }: VoiceDelegationViewProps) {
+  const [expanded, setExpanded] = useState(false)
   const navigable = useSessions(sessions => sessions.ids.includes(node.data.taskSessionId))
   return (
     <article className={css.taskCard} data-voice-delegation data-status={node.data.status}>
@@ -74,16 +76,25 @@ export function VoiceDelegationView({ node, useSessions, openSession, t }: Voice
         <span className={css.taskTitle}>{t('task.title')}</span>
         <span className={css.taskStatus}>{t(STATUS_KEYS[node.data.status])}</span>
       </header>
-      <p className={css.taskInput}>{node.data.input}</p>
-      {node.data.update !== undefined && <p className={css.taskUpdate}>{node.data.update}</p>}
-      <button
-        type="button"
-        className={css.taskLink}
-        disabled={!navigable}
-        onClick={() => { openSession(node.data.taskSessionId) }}
-      >
-        {t('task.open')}
-      </button>
+      {expanded && (
+        <div className={css.taskDetails}>
+          <p className={css.taskInput}>{node.data.input}</p>
+          {node.data.update !== undefined && <p className={css.taskUpdate}>{node.data.update}</p>}
+        </div>
+      )}
+      <div className={css.taskActions}>
+        <button type="button" className={css.taskLink} onClick={() => { setExpanded(value => !value) }}>
+          {expanded ? t('task.collapse') : t('task.expand')}
+        </button>
+        <button
+          type="button"
+          className={css.taskLink}
+          disabled={!navigable}
+          onClick={() => { openSession(node.data.taskSessionId) }}
+        >
+          {t('task.open')}
+        </button>
+      </div>
     </article>
   )
 }
