@@ -19,6 +19,8 @@ export interface SpeechBackend {
   appendAudio(audio: Uint8Array): void
   commitAudio(): void
   synthesize(responseId: string, text: string): void
+  /** Mark a streamed response complete after its final text fragment. */
+  finishSynthesis?(responseId: string): void
   interrupt(): void
   close(): Promise<void>
 }

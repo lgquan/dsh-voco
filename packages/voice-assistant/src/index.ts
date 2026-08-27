@@ -224,11 +224,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     binding.rewriteAbort = undefined
   }
 
-  const speakFragment = (binding: Binding, taskId: VoiceTaskId, text: string): void => {
+  const speakFragment = (binding: Binding, taskId: VoiceTaskId, text: string, flush = true): void => {
     const voiceId = binding.voiceSessionId
     if (voiceId === undefined || !binding.voiceAttached || text.trim() === '') return
     if (ctx.voice.appendSpeechText(voiceId, text)) {
-      ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
+      if (flush) ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
       return
     }
     // Providers without the optional streaming face still receive a usable
@@ -278,6 +278,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     ].join('\n')
     const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'plugin', plugin: 'voice-assistant' } })
     let rewritten = ''
+    let pending = ''
     try {
       for await (const chunk of llm.stream({
         provider: selection.provider,
@@ -290,9 +291,16 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (generation !== binding.rewriteGeneration || abort.signal.aborted) return
         if (chunk.type !== 'text-delta') continue
         rewritten += chunk.text
+        pending += chunk.text
+        const split = speechFragments(pending, false)
+        pending = split.rest
+        for (const fragment of split.fragments) speakFragment(binding, taskId, fragment, false)
       }
-      const speech = rewritten.trim() || fallbackEventSpeech(eventType, original)
-      speakFragment(binding, taskId, speech)
+      const final = speechFragments(pending, true)
+      for (const fragment of final.fragments) speakFragment(binding, taskId, fragment, false)
+      if (final.rest.trim() !== '') speakFragment(binding, taskId, final.rest.trim(), true)
+      else if (rewritten.trim() !== '') ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
+      if (rewritten.trim() === '' && pending.trim() === '') speakFragment(binding, taskId, fallbackEventSpeech(eventType, original))
     } catch (error: unknown) {
       if (!abort.signal.aborted && generation === binding.rewriteGeneration) {
         ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
@@ -1007,6 +1015,26 @@ function isTerminalObservation(observation: TaskObservation): boolean {
     || observation.status === 'failed'
     || observation.status === 'cancelled'
     || observation.status === 'interrupted'
+}
+
+function speechFragments(text: string, flush: boolean): { fragments: string[]; rest: string } {
+  const fragments: string[] = []
+  let rest = text
+  while (true) {
+    const match = /[。！？!?；;]/u.exec(rest)
+    if (match === null || match.index === undefined) break
+    const end = match.index + match[0].length
+    fragments.push(rest.slice(0, end).trim())
+    rest = rest.slice(end)
+  }
+  if (!flush && rest.length >= 48) {
+    const comma = Math.max(rest.lastIndexOf('，', 48), rest.lastIndexOf(',', 48))
+    if (comma >= 16) {
+      fragments.push(rest.slice(0, comma + 1).trim())
+      rest = rest.slice(comma + 1)
+    }
+  }
+  return { fragments: fragments.filter(Boolean), rest }
 }
 
 type FrontendRoute =

@@ -28,6 +28,7 @@ export class NodeSpeechBackend implements SpeechBackend {
   private recognitionQueue: Promise<void> = Promise.resolve()
   private synthesisQueue: Promise<void> = Promise.resolve()
   private synthesisGeneration = 0
+  private readonly synthesisResponses = new Map<string, { finished: boolean; started: boolean }>()
   private closed = false
 
   constructor(private readonly config: NodeSpeechConfig) {
@@ -79,9 +80,14 @@ export class NodeSpeechBackend implements SpeechBackend {
     // Each fragment is queued in order. `interrupt()` advances the generation
     // and invalidates every fragment that has not started yet.
     const generation = this.synthesisGeneration
+    const response = this.synthesisResponses.get(responseId) ?? { finished: false, started: false }
+    this.synthesisResponses.set(responseId, response)
     this.synthesisQueue = this.synthesisQueue.catch(() => {}).then(async () => {
       if (generation !== this.synthesisGeneration || this.closed) return
-      this.emit?.({ type: 'tts.started', responseId })
+      if (!response.started) {
+        response.started = true
+        this.emit?.({ type: 'tts.started', responseId })
+      }
       try {
         for (const sentence of splitSpeechText(text)) {
           if (generation !== this.synthesisGeneration || this.closed) return
@@ -92,7 +98,10 @@ export class NodeSpeechBackend implements SpeechBackend {
           this.emit?.({ type: 'tts.delta', responseId, audio })
         }
         if (generation !== this.synthesisGeneration || this.closed) return
-        this.emit?.({ type: 'tts.done', responseId })
+        if (response.finished) {
+          this.synthesisResponses.delete(responseId)
+          this.emit?.({ type: 'tts.done', responseId })
+        }
       } catch (error: unknown) {
         if (generation === this.synthesisGeneration && !this.closed) {
           this.emit?.({ type: 'error', message: 'Edge TTS failed: ' + errorMessage(error) })
@@ -101,12 +110,22 @@ export class NodeSpeechBackend implements SpeechBackend {
     })
   }
 
-  interrupt(): void { this.synthesisGeneration += 1 }
+  finishSynthesis(responseId: string): void {
+    const response = this.synthesisResponses.get(responseId)
+    if (response === undefined) return
+    response.finished = true
+  }
+
+  interrupt(): void {
+    this.synthesisGeneration += 1
+    this.synthesisResponses.clear()
+  }
 
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
     this.synthesisGeneration += 1
+    this.synthesisResponses.clear()
     this.vad?.clear()
     await Promise.allSettled([this.recognitionQueue, this.synthesisQueue])
     this.emit?.({ type: 'closed', reason: 'local ONNX backend closed' })

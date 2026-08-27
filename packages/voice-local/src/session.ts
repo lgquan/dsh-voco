@@ -28,6 +28,7 @@ export class LocalSession implements VoiceProviderSession {
     readonly utteranceId: VoiceUtteranceId
     readonly text: string
   }> = []
+  private activeSpeech: { readonly responseId: VoiceResponseId; readonly utteranceId: VoiceUtteranceId; text: string } | undefined
   private activeTaskId: VoiceTaskId | undefined
 
   constructor(
@@ -47,6 +48,7 @@ export class LocalSession implements VoiceProviderSession {
     this.backend.interrupt()
     this.pendingSpeech.splice(0)
     this.pendingOutputs.splice(0)
+    this.activeSpeech = undefined
     this.emit({ type: 'response.interrupted' })
   }
   playbackEnded(): void {
@@ -69,19 +71,25 @@ export class LocalSession implements VoiceProviderSession {
   }
 
   appendSpeechText(text: string): void {
-    const trimmed = text.trim()
-    if (trimmed !== '') this.pendingSpeech.push(trimmed)
+    if (text.trim() === '') return
+    if (this.activeSpeech === undefined) {
+      const responseId = VoiceResponseId(String(this.voiceSessionId) + ':response:' + randomUUID())
+      const utteranceId = VoiceUtteranceId(String(responseId) + ':text')
+      this.activeSpeech = { responseId, utteranceId, text: '' }
+      this.pendingOutputs.push(this.activeSpeech)
+      this.emit({ type: 'output_text.started', utteranceId, responseId })
+    }
+    this.activeSpeech.text += text
+    this.emit({ type: 'output_text.delta', utteranceId: this.activeSpeech.utteranceId, responseId: this.activeSpeech.responseId, text })
+    this.backend.synthesize(String(this.activeSpeech.responseId), text)
   }
 
   requestResponse(_policy: VoiceResponsePolicy): void {
     const text = [...this.pending.splice(0), ...this.pendingSpeech.splice(0)].join('\n')
-    if (text === '') return
-    const responseId = VoiceResponseId(String(this.voiceSessionId) + ':response:' + randomUUID())
-    const utteranceId = VoiceUtteranceId(String(responseId) + ':text')
-    this.pendingOutputs.push({ responseId, utteranceId, text })
-    this.emit({ type: 'output_text.started', utteranceId, responseId })
-    this.emit({ type: 'output_text.delta', utteranceId, responseId, text })
-    this.backend.synthesize(String(responseId), text)
+    if (text !== '') this.appendSpeechText(text)
+    const responseId = this.activeSpeech?.responseId
+    this.activeSpeech = undefined
+    if (responseId !== undefined) this.backend.finishSynthesis?.(String(responseId))
   }
 
   completeTaskCommand(callId: VoiceCommandCallId, result: TaskCommandResult): void {

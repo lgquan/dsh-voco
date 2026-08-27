@@ -122,11 +122,11 @@ describe('LocalSession', () => {
     session.requestResponse({ kind: 'automatic' })
     expect(events.findLast(event => (event as { type?: string }).type === 'output_text.delta')).toMatchObject({
       type: 'output_text.delta',
-      text: '独立模型重写后的第一句。\n这是同一条回复的第二句。',
+      text: '这是同一条回复的第二句。',
     })
     expect(backend.synthesize).toHaveBeenLastCalledWith(
       expect.any(String),
-      '独立模型重写后的第一句。\n这是同一条回复的第二句。',
+      '这是同一条回复的第二句。',
     )
   })
 })
