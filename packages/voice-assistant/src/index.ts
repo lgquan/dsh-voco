@@ -1,5 +1,7 @@
 /** Voice-to-Agent driver using ordinary followup, steer and cancel operations. @module @lgquan/dsh-voice-assistant */
 import { randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
+import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
@@ -70,6 +72,31 @@ const VOICE_SESSION_EVENT_TYPES = [
   'voice/utterance-end',
 ] as const
 
+function registerVoiceSessionEventTypes(eventTypes: ReadonlySet<string>): void {
+  const writable = eventTypes as Set<string>
+  for (const type of VOICE_SESSION_EVENT_TYPES) writable.add(type)
+}
+
+// A path-linked development plugin can resolve peer dependencies from its
+// source workspace while the DSH process resolves them from the CLI install.
+// Register both module instances before Cordis applies any plugin so the host
+// persistence reader knows the voice vocabulary when it opens an old Session.
+registerVoiceSessionEventTypes(KNOWN_SESSION_EVENT_TYPES)
+try {
+  const harnessEntry = process.argv[1]
+  if (harnessEntry !== undefined) {
+    const hostRequire = createRequire(resolve(harnessEntry))
+    const hostSession = hostRequire('@deepseek-ai/dsh-session') as {
+      readonly KNOWN_SESSION_EVENT_TYPES?: ReadonlySet<string>
+    }
+    if (hostSession.KNOWN_SESSION_EVENT_TYPES !== undefined) {
+      registerVoiceSessionEventTypes(hostSession.KNOWN_SESSION_EVENT_TYPES)
+    }
+  }
+} catch {
+  // A normal installed dependency graph shares the statically imported set.
+}
+
 interface ActiveTask {
   readonly id: VoiceTaskId
   readonly interactionMode: VoiceInteractionMode
@@ -122,15 +149,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   const handles = new Map<SessionId, AgentHandle>()
   const maxPending = config.maxPendingObservations ?? 64
   const maxRestoredUtterances = config.maxRestoredUtterances ?? 24
-  // DSH core recognizes only its own event vocabulary at read time and has no
-  // generic "skippable plugin event" registration surface yet. A session that
-  // carries these voice events would otherwise be refused on load, so register
-  // them once at boot (the set is module-scoped and read by the persistence
-  // coordinator). This is the load-side counterpart of the `declare module`
-  // type merge; see the package README's responsibility-boundary note.
-  const knownEventTypes = KNOWN_SESSION_EVENT_TYPES as unknown as Set<string>
-  for (const type of VOICE_SESSION_EVENT_TYPES) knownEventTypes.add(type)
-
   const loadConversationMemory = async (sessionId: SessionId): Promise<VoiceConversationMemory | undefined> => {
     const live = ctx.sessions.get(sessionId)
     const events = live?.events ?? (await ctx.get('sessionPersistence')?.inspect(sessionId))?.events
