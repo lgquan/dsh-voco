@@ -81,8 +81,15 @@ export class MossTts {
   }
 
   async synthesize(text: string, cancelled: () => boolean): Promise<Int16Array> {
+    const chunks: Int16Array[] = []
+    await this.synthesizeStreaming(text, cancelled, chunk => { chunks.push(chunk) })
+    return concatPcm(chunks)
+  }
+
+  /** Generate speech and deliver decoded PCM batches as soon as they are ready. */
+  async synthesizeStreaming(text: string, cancelled: () => boolean, onChunk: (pcm: Int16Array) => void): Promise<void> {
     const tokens = this.tokenizer.encodeIds(normalizeSpeechText(text))
-    if (tokens.length === 0) return new Int16Array()
+    if (tokens.length === 0) return
     const rows = this.buildInputRows(tokens)
     const rowWidth = rows[0]?.length ?? 0
     const flat = Int32Array.from(rows.flat())
@@ -92,16 +99,23 @@ export class MossTts {
     })
     let hidden = lastHidden(requiredTensor(past, 'global_hidden'))
     let pastLength = rows.length
-    const frames: Int32Array[] = []
     const seen = Array.from({ length: this.manifest.tts_config.n_vq }, () => new Set<number>())
     const random = xorshift32(42)
     const frameLimit = Math.min(this.config.maxFrames ?? this.manifest.generation_defaults.max_new_frames,
       this.manifest.generation_defaults.max_new_frames)
+    const pendingFrames: Int32Array[] = []
+
+    const flush = async (): Promise<void> => {
+      if (pendingFrames.length === 0 || cancelled()) return
+      const chunk = await this.decodeFrames(pendingFrames.splice(0))
+      if (chunk.length > 0 && !cancelled()) onChunk(chunk)
+    }
 
     for (let step = 0; step < frameLimit && !cancelled(); step += 1) {
       const frame = await this.nextFrame(hidden, seen, random)
       if (frame === undefined) break
-      frames.push(frame)
+      pendingFrames.push(frame)
+      if (pendingFrames.length >= STREAM_FRAME_BATCH) await flush()
       const audioRow = new Int32Array(rowWidth).fill(this.manifest.tts_config.audio_pad_token_id)
       audioRow[0] = this.manifest.tts_config.audio_assistant_slot_token_id
       for (let index = 0; index < frame.length; index += 1) {
@@ -123,8 +137,7 @@ export class MossTts {
       hidden = lastHidden(requiredTensor(past, 'global_hidden'))
       pastLength += 1
     }
-    if (cancelled() || frames.length === 0) return new Int16Array()
-    return this.decodeFrames(frames)
+    await flush()
   }
 
   async close(): Promise<void> {
@@ -186,6 +199,18 @@ export class MossTts {
     }
     return pcm
   }
+}
+
+const STREAM_FRAME_BATCH = 12
+
+function concatPcm(chunks: readonly Int16Array[]): Int16Array {
+  const result = new Int16Array(chunks.reduce((total, chunk) => total + chunk.length, 0))
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.length
+  }
+  return result
 }
 
 export function normalizeSpeechText(text: string): string {

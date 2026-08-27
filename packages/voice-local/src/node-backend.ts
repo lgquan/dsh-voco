@@ -87,13 +87,15 @@ export class NodeSpeechBackend implements SpeechBackend {
       if (tts === undefined) return
       this.emit?.({ type: 'tts.started', responseId })
       try {
-        const pcm = await tts.synthesize(text, () => generation !== this.synthesisGeneration || this.closed)
-        if (generation !== this.synthesisGeneration || this.closed) return
-        for (let offset = 0; offset < pcm.length; offset += TTS_CHUNK_SAMPLES) {
+        await tts.synthesizeStreaming(text, () => generation !== this.synthesisGeneration || this.closed, (pcm) => {
           if (generation !== this.synthesisGeneration || this.closed) return
-          const chunk = pcm.subarray(offset, Math.min(offset + TTS_CHUNK_SAMPLES, pcm.length))
-          this.emit?.({ type: 'tts.delta', responseId, audio: pcmBytes(chunk) })
-        }
+          for (let offset = 0; offset < pcm.length; offset += TTS_CHUNK_SAMPLES) {
+            if (generation !== this.synthesisGeneration || this.closed) return
+            const chunk = pcm.subarray(offset, Math.min(offset + TTS_CHUNK_SAMPLES, pcm.length))
+            this.emit?.({ type: 'tts.delta', responseId, audio: pcmBytes(chunk) })
+          }
+        })
+        if (generation !== this.synthesisGeneration || this.closed) return
         this.emit?.({ type: 'tts.done', responseId })
       } catch (error: unknown) {
         if (generation === this.synthesisGeneration && !this.closed) {
