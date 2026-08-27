@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import {
+  VoiceCommandCallId,
   VoiceResponseId,
   VoiceUtteranceId,
   type TaskObservation,
   type TaskCommandResult,
-  type VoiceCommandCallId,
   type VoiceInteractionMode,
   type VoiceProviderEvent,
   type VoiceProviderSession,
@@ -13,11 +13,9 @@ import {
 } from '@lgquan/dsh-voice'
 import type { SpeechBackend, SpeechBackendEvent } from './speech-backend.ts'
 
-const INTERACTION_MODE: VoiceInteractionMode = 'speech-shell'
-
 /** Provider session translating local speech events to the shared voice seam. */
 export class LocalSession implements VoiceProviderSession {
-  readonly interactionMode = INTERACTION_MODE
+  readonly interactionMode: VoiceInteractionMode
   readonly audio
   private closed = false
   private readonly pending: string[] = []
@@ -28,7 +26,9 @@ export class LocalSession implements VoiceProviderSession {
     private readonly backend: SpeechBackend,
     private readonly emit: (event: VoiceProviderEvent) => void,
     private readonly voiceSessionId: VoiceSessionId,
+    interactionMode: VoiceInteractionMode = 'speech-shell',
   ) {
+    this.interactionMode = interactionMode
     this.audio = backend.audio
   }
 
@@ -63,7 +63,9 @@ export class LocalSession implements VoiceProviderSession {
   }
 
   completeTaskCommand(_callId: VoiceCommandCallId, _result: TaskCommandResult): void {
-    throw new Error('local speech-shell sessions do not accept task commands')
+    if (this.interactionMode === 'speech-shell') {
+      throw new Error('local speech-shell sessions do not accept task commands')
+    }
   }
 
   async close(): Promise<void> {
@@ -77,7 +79,20 @@ export class LocalSession implements VoiceProviderSession {
       case 'ready': return
       case 'transcription.started': this.emit({ type: 'transcription.started', utteranceId: VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId) }); return
       case 'transcription.updated': this.emit({ type: 'transcription.updated', utteranceId: VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId), text: event.text }); return
-      case 'transcription.completed': this.emit({ type: 'transcription.completed', utteranceId: VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId), text: event.text }); return
+      case 'transcription.completed': {
+        const utteranceId = VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId)
+        this.emit({ type: 'transcription.completed', utteranceId, text: event.text })
+        if (this.interactionMode === 'frontend-agent' && event.text.trim() !== '') {
+          this.emit({
+            type: 'task.command',
+            call: {
+              id: VoiceCommandCallId(String(this.voiceSessionId) + ':task:' + randomUUID()),
+              command: { type: 'realtime_delegation', input: event.text.trim() },
+            },
+          })
+        }
+        return
+      }
       case 'transcription.failed': this.emit({ type: 'transcription.failed', utteranceId: VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId), message: event.message }); return
       case 'tts.started': {
         const responseId = this.responseId(event.responseId)

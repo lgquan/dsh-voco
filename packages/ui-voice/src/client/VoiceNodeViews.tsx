@@ -59,6 +59,7 @@ const STATUS_KEYS: Record<VoiceDelegationChatData['status'], VoiceKey> = {
   completed: 'task.status.completed',
   failed: 'task.status.failed',
   cancelled: 'task.status.cancelled',
+  interrupted: 'task.status.interrupted',
 }
 
 /** Render the minimum one-way link from a Voice Session to its independent DSH task. */

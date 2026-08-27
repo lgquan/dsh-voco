@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-The `dsh-voco` patch-layer bundle attaches provider transport directly to the current source Session and restores recent conversation from durable `voice/utterance-end` events. Delegations from one source Session continuously reuse one ordinary task Agent Session. Full results remain in the task UI while `COMPLETE` carries an adaptive, conversational spoken response. Root-owned audio continues across navigation, and the browser history index exposes saved Voice Sessions in the sidebar.
+The `dsh-voco` patch-layer bundle attaches provider transport directly to the current source Session and restores recent conversation from durable `voice/utterance-end` events. Delegations from one source Session continuously reuse one ordinary task Agent Session, with the binding persisted as `voice/task-session-bound` so a service restart resumes the same task session. Full results remain in the task UI while `COMPLETE` carries an adaptive, conversational spoken response. Root-owned audio continues across navigation, and the browser history index exposes saved Voice Sessions in the sidebar.
 
 ## Model Experience
 

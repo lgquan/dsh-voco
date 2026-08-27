@@ -31,6 +31,7 @@ export const zh = {
   'task.status.completed': '已完成',
   'task.status.failed': '失败',
   'task.status.cancelled': '已取消',
+  'task.status.interrupted': '服务中断',
   'task.open': '打开任务',
 } satisfies Record<string, string>
 
@@ -65,5 +66,6 @@ export const en = {
   'task.status.completed': 'Completed',
   'task.status.failed': 'Failed',
   'task.status.cancelled': 'Cancelled',
+  'task.status.interrupted': 'Interrupted',
   'task.open': 'Open task',
 } satisfies Record<VoiceKey, string>

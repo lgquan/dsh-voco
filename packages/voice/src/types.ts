@@ -147,10 +147,15 @@ export interface VoiceTaskDelegated {
   readonly input: string
 }
 
+/** Durable binding from one Voice conversation to its long-lived task Agent. */
+export interface VoiceTaskSessionBound {
+  readonly taskSessionId: SessionId
+}
+
 /** Provider-independent task state appended by an Agent consumer. */
 export interface TaskObservation {
   readonly taskId: VoiceTaskId
-  readonly status: 'accepted' | 'running' | 'completed' | 'failed' | 'cancelled'
+  readonly status: 'accepted' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
   readonly taskTurn?: number
   readonly channel?: 'STATUS' | 'COMPLETE'
   readonly voiceMessage?: VoiceTaskMessage
@@ -175,6 +180,11 @@ declare module '@deepseek-ai/dsh-session/types' {
      * @param event - delegation identity, target session, and submitted task text.
      */
     'voice/task-delegated': VoiceTaskDelegated
+    /**
+     * Binds the Voice conversation to its long-lived task Agent Session.
+     * @param event - durable task-session identity.
+     */
+    'voice/task-session-bound': VoiceTaskSessionBound
     /**
      * Provider-independent task state made visible to a realtime voice Agent.
      * @param event - latest status or backend-authored message for one delegation.

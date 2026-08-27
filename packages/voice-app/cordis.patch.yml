@@ -11,6 +11,7 @@
     - id: voice-local
       name: '@lgquan/dsh-voice-local'
       config:
+        interactionMode: frontend-agent
         startupTimeoutMs: 120000
         inputSampleRate: 16000
         outputSampleRate: 48000

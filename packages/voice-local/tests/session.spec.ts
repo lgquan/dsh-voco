@@ -51,4 +51,27 @@ describe('LocalSession', () => {
     session.interruptResponse()
     expect(backend.interrupt).toHaveBeenCalledTimes(1)
   })
+
+  it('turns completed ASR into one background delegation in frontend-agent mode', async () => {
+    const backend = new MemoryBackend()
+    const events: unknown[] = []
+    const session = new LocalSession(
+      backend,
+      event => events.push(event),
+      VoiceSessionId('voice-frontend-test'),
+      'frontend-agent',
+    )
+    await session.start()
+    backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-2', text: '检查项目状态' })
+    backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-3', text: '   ' })
+
+    expect(events).toEqual(expect.arrayContaining([{
+      type: 'task.command',
+      call: expect.objectContaining({
+        command: { type: 'realtime_delegation', input: '检查项目状态' },
+      }),
+    }]))
+    expect(events.filter(event => (event as { type?: string }).type === 'task.command')).toHaveLength(1)
+    expect(session.interactionMode).toBe('frontend-agent')
+  })
 })

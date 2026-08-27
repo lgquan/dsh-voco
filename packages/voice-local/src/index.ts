@@ -13,6 +13,8 @@ export const inject = ['voice']
 
 export interface Config {
   readonly modelDir?: string
+  /** Whether local speech feeds the current Agent or delegates to a task Agent. */
+  readonly interactionMode?: 'speech-shell' | 'frontend-agent'
   readonly startupTimeoutMs?: number
   readonly inputSampleRate?: number
   readonly outputSampleRate?: number
@@ -21,6 +23,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   modelDir: z.string(),
+  interactionMode: z.union(['speech-shell', 'frontend-agent']).default('speech-shell'),
   startupTimeoutMs: z.natural().min(1).default(120_000),
   inputSampleRate: z.natural().min(1).default(16_000),
   outputSampleRate: z.natural().min(1).default(48_000),
@@ -51,7 +54,7 @@ export function apply(ctx: Context, config: Config = {}): () => void {
         outputSampleRate: config.outputSampleRate ?? 48_000,
         threads: config.threads ?? 4,
       })
-      const session = new LocalSession(backend, emit, voiceSessionId)
+      const session = new LocalSession(backend, emit, voiceSessionId, config.interactionMode ?? 'speech-shell')
       try {
         await session.start()
         return session

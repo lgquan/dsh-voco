@@ -740,6 +740,9 @@ describe('voice assistant branch coverage', () => {
       event.type === 'voice/task-delegated' ? [event.data.taskSessionId] : []
     ))
     expect(delegatedSessions).toEqual([first.taskSessionId, first.taskSessionId])
+    expect(source.events.filter(event => event.type === 'voice/task-session-bound').map(event => (
+      event.type === 'voice/task-session-bound' ? event.data.taskSessionId : undefined
+    ))).toEqual([first.taskSessionId])
     expect(harness.taskBindings.get(first.taskSessionId)).toBe(harness.bindings.get(sessionId))
   })
 
@@ -766,6 +769,22 @@ describe('voice assistant branch coverage', () => {
     expect(active.agent.followup).toHaveBeenCalledOnce()
     expect(harness.created).toHaveLength(1)
     expect(harness.taskBindings.get(taskSessionId)).toBe(harness.bindings.get(sourceId))
+  })
+
+  it('records an active task as interrupted during service shutdown', async () => {
+    const harness = makeHarness({ taskSessionPolicy: 'continuous' })
+    const sourceId = SessionId('shutdown-source')
+    const source = harness.makeSession(sourceId)
+    harness.agents.set(sourceId, harness.makeAgent(source))
+    const voice = await harness.open(sourceId, 'frontend-agent')
+    const taskId = await startDelegation(harness, voice, 'long running task')
+
+    await expect(harness.cleanup?.()).resolves.toBeUndefined()
+    expect(source.events.flatMap(event => (
+      event.type === 'voice/task-observation' && event.data.taskId === taskId
+        ? [event.data]
+        : []
+    )).at(-1)).toMatchObject({ taskId, status: 'interrupted' })
   })
 
   it('uses default model and announcement fallbacks when no header or preset exists', async () => {

@@ -61,6 +61,7 @@ export const Config: z<Config> = z.object({
 const VOICE_SESSION_EVENT_TYPES = [
   'voice/task-observation',
   'voice/task-delegated',
+  'voice/task-session-bound',
   'voice/utterance-start',
   'voice/utterance-end',
 ] as const
@@ -100,6 +101,7 @@ interface Binding {
   active: ActiveTask | undefined
   continuousTaskAgent: ContinuousTaskAgent | undefined
   lastTerminalTaskId: VoiceTaskId | undefined
+  recoveryDelivered: boolean
   readonly pending: TaskObservation[]
   readonly utterances: Map<VoiceUtteranceId, OpenUtterance>
   chain: Promise<void>
@@ -150,6 +152,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         active: undefined,
         continuousTaskAgent: undefined,
         lastTerminalTaskId: undefined,
+        recoveryDelivered: false,
         pending: [],
         utterances: new Map(),
         chain: Promise.resolve(),
@@ -427,11 +430,18 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   const ensureContinuousTaskAgent = async (binding: Binding): Promise<ContinuousTaskAgent> => {
     if (binding.continuousTaskAgent !== undefined) return binding.continuousTaskAgent
-    const previous = requireSourceSession(binding).events.findLast(event => event.type === 'voice/task-delegated')
-    if (previous?.type === 'voice/task-delegated') {
+    const sourceSession = requireSourceSession(binding)
+    const previousBound = sourceSession.events.findLast(event => event.type === 'voice/task-session-bound')
+    const previousDelegation = sourceSession.events.findLast(event => event.type === 'voice/task-delegated')
+    const previousTaskSessionId = previousBound?.type === 'voice/task-session-bound'
+      ? previousBound.data.taskSessionId
+      : previousDelegation?.type === 'voice/task-delegated'
+        ? previousDelegation.data.taskSessionId
+        : undefined
+    if (previousTaskSessionId !== undefined) {
       try {
-        const resumed = await resumeTaskAgent(binding, previous.data.taskSessionId)
-        const resource = { taskSessionId: previous.data.taskSessionId, ...resumed }
+        const resumed = await resumeTaskAgent(binding, previousTaskSessionId)
+        const resource = { taskSessionId: previousTaskSessionId, ...resumed }
         binding.continuousTaskAgent = resource
         taskBindings.set(resource.taskSessionId, binding)
         return resource
@@ -441,6 +451,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const taskSessionId = SessionId(`session-${randomUUID()}`)
     const created = await createTaskAgent(binding, taskSessionId)
+    sourceSession.append('voice/task-session-bound', { taskSessionId })
     const resource = { taskSessionId, ...created }
     binding.continuousTaskAgent = resource
     taskBindings.set(taskSessionId, binding)
@@ -680,6 +691,14 @@ export function apply(ctx: Context, config: Config = {}): void {
     enqueue(binding, async () => {
       if (session.interactionMode === 'speech-shell') await ensureAgent(binding)
       if (binding.voiceSessionId !== session.id) return
+      if (!binding.recoveryDelivered) {
+        const lastObservation = requireSourceSession(binding).events.findLast(event => event.type === 'voice/task-observation')
+        if (lastObservation?.type === 'voice/task-observation' && lastObservation.data.status === 'interrupted') {
+          binding.recoveryDelivered = true
+          ctx.voice.appendTaskObservation(session.id, lastObservation.data)
+          ctx.voice.requestResponse(session.id, { kind: 'automatic' })
+        }
+      }
       if (binding.pending.length !== 0) {
         const observations = binding.pending.splice(0)
         for (const observation of observations) ctx.voice.appendTaskObservation(session.id, observation)
@@ -805,7 +824,22 @@ export function apply(ctx: Context, config: Config = {}): void {
       failures.push(error)
     }
     for (const binding of bindings.values()) {
-      const disposers = [binding.active?.disposeVoiceMessage, binding.continuousTaskAgent?.disposeVoiceMessage]
+      const task = binding.active
+      const disposers = [task?.disposeVoiceMessage, binding.continuousTaskAgent?.disposeVoiceMessage]
+      if (task !== undefined) {
+        try {
+          append(binding, {
+            taskId: task.id,
+            status: 'interrupted',
+            ...(task.taskTurn === undefined ? {} : { taskTurn: task.taskTurn }),
+            reason: 'voice-assistant service stopped before the task finished',
+          }, false, false)
+          binding.lastTerminalTaskId = task.id
+          binding.active = undefined
+        } catch (error: unknown) {
+          failures.push(error)
+        }
+      }
       if (binding.active !== undefined) delete binding.active.disposeVoiceMessage
       binding.continuousTaskAgent = undefined
       for (const dispose of disposers) {
@@ -831,6 +865,7 @@ function isTerminalObservation(observation: TaskObservation): boolean {
   return observation.status === 'completed'
     || observation.status === 'failed'
     || observation.status === 'cancelled'
+    || observation.status === 'interrupted'
 }
 
 function speechFragments(text: string, flush: boolean): { fragments: string[]; rest: string } {
