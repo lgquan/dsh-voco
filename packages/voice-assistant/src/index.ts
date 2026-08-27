@@ -16,6 +16,7 @@ import {
   type TaskCommandResult,
   type TaskObservation,
   type VoiceEvent,
+  type VoiceConversationMemory,
   type VoiceInteractionMode,
   type VoiceResponseId,
   type VoiceSessionId,
@@ -32,6 +33,12 @@ export const inject = ['agentDefaultModel', 'agents', 'sessions', 'systemPrompt'
 export interface Config {
   /** Maximum observations queued for a voice session whose transport is currently detached. */
   readonly maxPendingObservations?: number
+  /** Restore completed conversational utterances after a provider or DSH restart. */
+  readonly restoreConversation?: boolean
+  /** Maximum completed utterances restored as provider context; does not limit spoken reply length. */
+  readonly maxRestoredUtterances?: number
+  /** Whether frontend delegations use independent Agents or one durable conversational Agent. */
+  readonly taskSessionPolicy?: 'isolated' | 'continuous'
   /** Spoken announcement for a completed task that produced no final backend message. */
   readonly completedAnnouncement?: string
   /** Spoken announcement for a failed task. */
@@ -42,6 +49,9 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   maxPendingObservations: z.natural().min(1).default(64),
+  restoreConversation: z.boolean().default(true),
+  maxRestoredUtterances: z.natural().min(1).default(24),
+  taskSessionPolicy: z.union(['isolated', 'continuous']).default('isolated'),
   completedAnnouncement: z.string().default('任务已完成。'),
   failedAnnouncement: z.string().default('任务失败了，请查看屏幕上的错误信息。'),
   cancelledAnnouncement: z.string().default('任务已取消。'),
@@ -74,6 +84,12 @@ interface OpenUtterance {
   text: string
 }
 
+interface ContinuousTaskAgent {
+  readonly taskSessionId: SessionId
+  readonly agent: Agent
+  readonly disposeVoiceMessage: () => void
+}
+
 interface Binding {
   readonly sessionId: SessionId
   agent?: Agent
@@ -82,6 +98,7 @@ interface Binding {
   voiceAttached: boolean
   voiceTurnMarked: boolean
   active: ActiveTask | undefined
+  continuousTaskAgent: ContinuousTaskAgent | undefined
   lastTerminalTaskId: VoiceTaskId | undefined
   readonly pending: TaskObservation[]
   readonly utterances: Map<VoiceUtteranceId, OpenUtterance>
@@ -94,6 +111,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const taskBindings = new Map<SessionId, Binding>()
   const handles = new Map<SessionId, AgentHandle>()
   const maxPending = config.maxPendingObservations ?? 64
+  const maxRestoredUtterances = config.maxRestoredUtterances ?? 24
   // DSH core recognizes only its own event vocabulary at read time and has no
   // generic "skippable plugin event" registration surface yet. A session that
   // carries these voice events would otherwise be refused on load, so register
@@ -102,6 +120,21 @@ export function apply(ctx: Context, config: Config = {}): void {
   // type merge; see the package README's responsibility-boundary note.
   const knownEventTypes = KNOWN_SESSION_EVENT_TYPES as unknown as Set<string>
   for (const type of VOICE_SESSION_EVENT_TYPES) knownEventTypes.add(type)
+
+  const loadConversationMemory = async (sessionId: SessionId): Promise<VoiceConversationMemory | undefined> => {
+    const live = ctx.sessions.get(sessionId)
+    const events = live?.events ?? (await ctx.get('sessionPersistence')?.inspect(sessionId))?.events
+    if (events === undefined) return undefined
+    const items = events.flatMap(event => {
+      if (event.type !== 'voice/utterance-end' || event.data.state !== 'completed') return []
+      const text = event.data.text.trim()
+      return text === '' ? [] : [{ role: event.data.role, text }]
+    }).slice(-maxRestoredUtterances)
+    return items.length === 0 ? undefined : { items }
+  }
+  const disposeMemorySource = config.restoreConversation === false
+    ? undefined
+    : ctx.voice.registerMemorySource(loadConversationMemory)
 
   const bindingFor = (sessionId: SessionId): Binding => {
     let binding = bindings.get(sessionId)
@@ -113,6 +146,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         voiceAttached: false,
         voiceTurnMarked: false,
         active: undefined,
+        continuousTaskAgent: undefined,
         lastTerminalTaskId: undefined,
         pending: [],
         utterances: new Map(),
@@ -270,6 +304,63 @@ export function apply(ctx: Context, config: Config = {}): void {
     return { agent: handle.agent, disposeVoiceMessage }
   }
 
+  const resumeTaskAgent = async (binding: Binding, taskSessionId: SessionId): Promise<{
+    readonly agent: Agent
+    readonly disposeVoiceMessage: () => void
+  }> => {
+    const live = ctx.agents.get(taskSessionId)
+    if (live !== undefined) {
+      return {
+        agent: live,
+        disposeVoiceMessage: installVoiceMessageTool(live.ctx, input => sendVoiceMessage(binding, input)),
+      }
+    }
+    const sourceAgent = await ensureAgent(binding)
+    const defaults = ctx.agentDefaultModel.currentSelection()
+    const presets = ctx.get('agentPresets')
+    let disposeVoiceMessage: (() => void) | undefined
+    const handle = await ctx.agents.resume({
+      resumeSessionId: taskSessionId,
+      agentOptions: {
+        provider: sourceAgent.options.provider ?? defaults.provider,
+        model: sourceAgent.options.model ?? defaults.model,
+      },
+      setup: (agentCtx: Context) => {
+        presets?.composeFrom(agentCtx, sourceAgent.ctx)
+        disposeVoiceMessage = installVoiceMessageTool(agentCtx, input => sendVoiceMessage(binding, input))
+      },
+    })
+    handles.set(taskSessionId, handle)
+    if (disposeVoiceMessage === undefined) {
+      handles.delete(taskSessionId)
+      await handle.dispose()
+      throw new Error('voice-assistant: resumed delegated Agent did not install send_voice_message')
+    }
+    return { agent: handle.agent, disposeVoiceMessage }
+  }
+
+  const ensureContinuousTaskAgent = async (binding: Binding): Promise<ContinuousTaskAgent> => {
+    if (binding.continuousTaskAgent !== undefined) return binding.continuousTaskAgent
+    const previous = requireSourceSession(binding).events.findLast(event => event.type === 'voice/task-delegated')
+    if (previous?.type === 'voice/task-delegated') {
+      try {
+        const resumed = await resumeTaskAgent(binding, previous.data.taskSessionId)
+        const resource = { taskSessionId: previous.data.taskSessionId, ...resumed }
+        binding.continuousTaskAgent = resource
+        taskBindings.set(resource.taskSessionId, binding)
+        return resource
+      } catch (error: unknown) {
+        ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      }
+    }
+    const taskSessionId = SessionId(`session-${randomUUID()}`)
+    const created = await createTaskAgent(binding, taskSessionId)
+    const resource = { taskSessionId, ...created }
+    binding.continuousTaskAgent = resource
+    taskBindings.set(taskSessionId, binding)
+    return resource
+  }
+
   const requireSourceSession = (binding: Binding) => {
     const session = ctx.sessions.get(binding.sessionId)
     if (session === undefined) {
@@ -408,9 +499,16 @@ export function apply(ctx: Context, config: Config = {}): void {
           return
         }
         const taskId = VoiceTaskId(randomUUID())
-        const taskSessionId = SessionId(`session-${randomUUID()}`)
-        let created: Awaited<ReturnType<typeof createTaskAgent>>
-        try { created = await createTaskAgent(binding, taskSessionId) } catch (error) { backendUnavailable(error); return }
+        const continuous = (config.taskSessionPolicy ?? 'isolated') === 'continuous'
+        let created: Awaited<ReturnType<typeof createTaskAgent>> & { readonly taskSessionId: SessionId }
+        try {
+          if (continuous) {
+            created = await ensureContinuousTaskAgent(binding)
+          } else {
+            const taskSessionId = SessionId(`session-${randomUUID()}`)
+            created = { taskSessionId, ...await createTaskAgent(binding, taskSessionId) }
+          }
+        } catch (error) { backendUnavailable(error); return }
         const message = createUserMessage({
           content: [{ type: 'text', text: renderRealtimeDelegation(taskId, call.command.input, call.command.transcriptDelta) }],
           source: { kind: 'user' },
@@ -418,23 +516,23 @@ export function apply(ctx: Context, config: Config = {}): void {
         const task: ActiveTask = {
           id: taskId,
           interactionMode: 'frontend-agent',
-          taskSessionId,
+          taskSessionId: created.taskSessionId,
           messageIds: new Set([message.id]),
           agent: created.agent,
-          disposeVoiceMessage: created.disposeVoiceMessage,
+          ...(continuous ? {} : { disposeVoiceMessage: created.disposeVoiceMessage }),
           cancelling: false,
         }
         binding.active = task
-        taskBindings.set(taskSessionId, binding)
+        taskBindings.set(created.taskSessionId, binding)
         try {
           requireSourceSession(binding).append('voice/task-delegated', {
             taskId,
-            taskSessionId,
+            taskSessionId: created.taskSessionId,
             input: call.command.input,
           })
           created.agent.followup(message)
         } catch (error) {
-          taskBindings.delete(taskSessionId)
+          if (!continuous) taskBindings.delete(created.taskSessionId)
           binding.active = undefined
           try { task.disposeVoiceMessage?.() } catch (cleanupError: unknown) {
             ctx.logger.warn(cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)))
@@ -596,7 +694,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (observeSessionEvent(binding, event, append, config, (error) => {
         ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
       })) {
-        taskBindings.delete(session.id)
+        if ((config.taskSessionPolicy ?? 'isolated') === 'isolated') taskBindings.delete(session.id)
       }
     })
   })
@@ -604,13 +702,21 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => async () => {
     await Promise.all([...bindings.values()].map(binding => binding.chain))
     const failures: unknown[] = []
+    try {
+      disposeMemorySource?.()
+    } catch (error: unknown) {
+      failures.push(error)
+    }
     for (const binding of bindings.values()) {
-      const dispose = binding.active?.disposeVoiceMessage
+      const disposers = [binding.active?.disposeVoiceMessage, binding.continuousTaskAgent?.disposeVoiceMessage]
       if (binding.active !== undefined) delete binding.active.disposeVoiceMessage
-      try {
-        dispose?.()
-      } catch (error: unknown) {
-        failures.push(error)
+      binding.continuousTaskAgent = undefined
+      for (const dispose of disposers) {
+        try {
+          dispose?.()
+        } catch (error: unknown) {
+          failures.push(error)
+        }
       }
     }
     const settled = await Promise.allSettled([...handles.values()].map(handle => handle.dispose()))
@@ -653,7 +759,7 @@ function observeSessionEvent(
   if (event.type !== 'turn/end' || event.data.turn !== task.taskTurn) return false
   const status = terminalStatus(event.data.reason.kind)
   const message = status === 'completed' && task.interactionMode === 'frontend-agent'
-    ? task.completionMessage ?? task.lastAssistantMessage
+    ? task.completionMessage
     : undefined
   const hasCompletedOutput = task.interactionMode === 'frontend-agent'
     ? message !== undefined

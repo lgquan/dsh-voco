@@ -457,7 +457,7 @@ describe('Voice UI assembly', () => {
       },
     } as unknown as ClientContext
 
-    expect(inject).toEqual(['conversationEvents', 'slots', 'sessions', 'workspaces', 'locale'])
+    expect(inject).toEqual(['conversationEvents', 'slots', 'sessions', 'locale'])
     apply(ctx)
     expect(definitions).toEqual([voiceUtteranceDefinition, voiceDelegationDefinition])
     expect(registrations.map(entry => [entry.options.name, entry.options.id ?? entry.options.key])).toEqual([
@@ -476,9 +476,9 @@ describe('Voice UI assembly', () => {
       stopVoice(): Promise<void>
     })()
     await control.startVoice(VOICE_SESSION)
-    expect(connectWorkspace).toHaveBeenCalledWith('workspace-1' as WorkspaceId)
-    expect(open).toHaveBeenCalledWith(FRESH_VOICE_SESSION)
-    expect(start).toHaveBeenCalledWith(FRESH_VOICE_SESSION)
+    expect(connectWorkspace).not.toHaveBeenCalled()
+    expect(open).toHaveBeenCalledWith(VOICE_SESSION)
+    expect(start).toHaveBeenCalledWith(VOICE_SESSION)
     await control.retryVoice()
     await control.stopVoice()
     expect(retry).toHaveBeenCalledTimes(1)
@@ -517,14 +517,14 @@ describe('Voice UI assembly', () => {
     disposeHistory()
   })
 
-  it('leaves voice unstarted when the source session has no workspace', async () => {
+  it('starts voice from the source session even when it has no workspace', async () => {
     const registrations: { options: Record<string, unknown> }[] = []
     const connectWorkspace = vi.fn()
     const open = vi.fn()
     const source = listState()
     source.byId[VOICE_SESSION] = { ...source.byId[VOICE_SESSION]!, cwd: '/ungrouped' }
     const sessionSnapshot = source
-    vi.spyOn(VoiceController.prototype, 'start').mockResolvedValue(undefined)
+    const start = vi.spyOn(VoiceController.prototype, 'start').mockResolvedValue(undefined)
     const ctx = {
       sessions: { open, list: { getSnapshot: () => sessionSnapshot } },
       workspaces: {
@@ -547,6 +547,7 @@ describe('Voice UI assembly', () => {
     const control = (registrations[0]!.options.inject as () => VoiceControlInjected)()
     await control.startVoice(VOICE_SESSION)
     expect(connectWorkspace).not.toHaveBeenCalled()
-    expect(open).not.toHaveBeenCalled()
+    expect(open).toHaveBeenCalledWith(VOICE_SESSION)
+    expect(start).toHaveBeenCalledWith(VOICE_SESSION)
   })
 })

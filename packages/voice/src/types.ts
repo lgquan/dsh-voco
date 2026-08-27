@@ -76,6 +76,17 @@ export function VoiceTaskMessageId(value: string): VoiceTaskMessageId {
 /** Whether the provider is a speech transport or a conversational frontend Agent. */
 export type VoiceInteractionMode = 'speech-shell' | 'frontend-agent'
 
+/** One completed conversational turn restored into a fresh provider session. */
+export interface VoiceConversationItem {
+  readonly role: 'user' | 'assistant'
+  readonly text: string
+}
+
+/** Bounded conversational context restored after a provider session restart. */
+export interface VoiceConversationMemory {
+  readonly items: readonly VoiceConversationItem[]
+}
+
 /** Audio parameters negotiated for a voice session. */
 export interface VoiceAudioProfile {
   readonly inputSampleRate: number
@@ -213,6 +224,7 @@ export interface VoiceProvider {
   connect(input: {
     readonly voiceSessionId: VoiceSessionId
     readonly agentSessionId: SessionId
+    readonly memory?: VoiceConversationMemory
     readonly emit: (event: VoiceProviderEvent) => void
   }): Promise<VoiceProviderSession>
 }

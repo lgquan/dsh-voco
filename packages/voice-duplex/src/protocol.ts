@@ -5,6 +5,7 @@ import {
   VoiceTaskId,
   type TaskCommandCall,
   type TaskCommandResult,
+  type VoiceConversationItem,
 } from '@wayneyu430227/dsh-voice'
 
 /** One provider JSON object before normalization. */
@@ -96,6 +97,18 @@ export function taskCommandResultItem(callId: VoiceCommandCallId, result: TaskCo
     role: 'tool',
     call_id: callId,
     content: [{ type: 'input_text', text: JSON.stringify(output) }],
+  }
+}
+
+/** Build one historical text message accepted by `conversation.item.create`. */
+export function conversationTextCreateItem(item: VoiceConversationItem): RawEvent {
+  return {
+    type: 'message',
+    role: item.role,
+    content: [{
+      type: item.role === 'user' ? 'input_text' : 'output_text',
+      text: item.text,
+    }],
   }
 }
 

@@ -8,6 +8,7 @@ import {
   type TaskCommandResult,
   type TaskObservation,
   type VoiceCommandCallId,
+  type VoiceConversationMemory,
   type VoiceInteractionMode,
   type VoiceProviderEvent,
   type VoiceProviderSession,
@@ -19,6 +20,7 @@ import {
 } from '@wayneyu430227/dsh-voice'
 import {
   audioAppend,
+  conversationTextCreateItem,
   conversationTextUpdateItem,
   decodeEvent,
   decodeTaskCommandCalls,
@@ -132,6 +134,7 @@ export class DuplexSession implements VoiceProviderSession {
    * @param voiceSessionId - transport identity used to namespace provider-local ids.
    * @param emit - normalized event receiver.
    * @param diagnostic - optional receiver for redacted semantic checkpoints.
+   * @param memory - bounded durable history for a fresh frontend conversation.
    * @returns live session.
    */
   static async connect(
@@ -139,6 +142,7 @@ export class DuplexSession implements VoiceProviderSession {
     voiceSessionId: VoiceSessionId,
     emit: (event: VoiceProviderEvent) => void,
     diagnostic?: (entry: DuplexDiagnosticEntry) => void,
+    memory?: VoiceConversationMemory,
   ): Promise<DuplexSession> {
     const socket = await connectSocket(config)
     const session = new DuplexSession(socket, emit, config, voiceSessionId, diagnostic)
@@ -146,7 +150,19 @@ export class DuplexSession implements VoiceProviderSession {
     socket.on('message', (data) => { session.receive(decodeEvent(data)) })
     socket.on('close', (_code, reason) => { session.onClosed(reason.toString()) })
     socket.on('error', (error) => { emit({ type: 'error', message: error.message }) })
+    await session.restoreConversation(memory)
     return session
+  }
+
+  /** Restore durable text history before a fresh frontend session starts receiving audio. */
+  async restoreConversation(memory: VoiceConversationMemory | undefined): Promise<void> {
+    if (this.interactionMode !== 'frontend-agent' || memory === undefined || memory.items.length === 0) return
+    this.trace('upstream', 'conversation.item.create.restore', { count: memory.items.length })
+    await this.queue({
+      type: 'conversation.item.create',
+      event_id: this.newEventId(),
+      items: memory.items.map(conversationTextCreateItem),
+    })
   }
 
   appendAudio(audio: Uint8Array): void {

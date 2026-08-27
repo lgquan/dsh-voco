@@ -81,6 +81,11 @@ interface CapturedBinding {
   interactionMode: VoiceInteractionMode | undefined
   voiceAttached: boolean
   active: CapturedTask | undefined
+  continuousTaskAgent: {
+    readonly taskSessionId: SessionId
+    readonly agent: Agent
+    readonly disposeVoiceMessage: () => void
+  } | undefined
   lastTerminalTaskId: VoiceTaskId | undefined
   readonly pending: TaskObservation[]
   readonly utterances: Map<string, unknown>
@@ -100,6 +105,7 @@ interface Harness {
   readonly warnings: unknown[]
   readonly created: Agent[]
   readonly handleDisposers: Array<ReturnType<typeof vi.fn>>
+  readonly loadMemory: (sessionId: SessionId) => Promise<unknown>
   readonly behavior: {
     createError: unknown
     resumeError: unknown
@@ -141,6 +147,7 @@ function makeHarness(config: Parameters<typeof apply>[1] = {}): Harness {
   const warnings: unknown[] = []
   const created: Agent[] = []
   const handleDisposers: Array<ReturnType<typeof vi.fn>> = []
+  let memorySource: ((sessionId: SessionId) => Promise<unknown>) | undefined
   const behavior = {
     createError: undefined as unknown,
     resumeError: undefined as unknown,
@@ -246,6 +253,10 @@ function makeHarness(config: Parameters<typeof apply>[1] = {}): Harness {
     },
     agentDefaultModel: { currentSelection: () => ({ provider: 'default-provider', model: 'default-model' }) },
     voice: {
+      registerMemorySource: (source: (sessionId: SessionId) => Promise<unknown>) => {
+        memorySource = source
+        return () => { memorySource = undefined }
+      },
       appendTaskObservation: (_id: VoiceSessionId, observation: TaskObservation) => { observations.push(observation) },
       requestResponse: vi.fn(),
       completeTaskCommand: (id: VoiceSessionId, callId: string, result: unknown) => {
@@ -282,6 +293,7 @@ function makeHarness(config: Parameters<typeof apply>[1] = {}): Harness {
     warnings,
     created,
     handleDisposers,
+    loadMemory: async (sessionId: SessionId) => memorySource?.(sessionId),
     behavior,
     services,
     cleanup: undefined as Harness['cleanup'],
@@ -380,6 +392,43 @@ beforeEach(() => {
 })
 
 describe('voice assistant branch coverage', () => {
+  it('restores only bounded completed utterances from live or persisted source sessions', async () => {
+    const harness = makeHarness({ maxRestoredUtterances: 2 })
+    const sessionId = SessionId('memory-source')
+    const session = harness.makeSession(sessionId)
+    session.append('voice/utterance-end', {
+      utteranceId: VoiceUtteranceId('u1'), role: 'user', text: ' first ', state: 'completed',
+    })
+    session.append('voice/utterance-end', {
+      utteranceId: VoiceUtteranceId('a1'), role: 'assistant', text: ' second ', state: 'completed',
+    })
+    session.append('voice/utterance-end', {
+      utteranceId: VoiceUtteranceId('ignored'), role: 'assistant', text: 'interrupted', state: 'interrupted',
+    })
+    session.append('voice/utterance-end', {
+      utteranceId: VoiceUtteranceId('u2'), role: 'user', text: ' third ', state: 'completed',
+    })
+    expect(await harness.loadMemory(sessionId)).toEqual({
+      items: [
+        { role: 'assistant', text: 'second' },
+        { role: 'user', text: 'third' },
+      ],
+    })
+
+    harness.sessions.delete(sessionId)
+    harness.services.persistence = { inspect: vi.fn(async () => ({ events: session.events })) }
+    expect(await harness.loadMemory(sessionId)).toEqual({
+      items: [
+        { role: 'assistant', text: 'second' },
+        { role: 'user', text: 'third' },
+      ],
+    })
+    expect(harness.services.persistence.inspect).toHaveBeenCalledWith(sessionId)
+
+    const disabled = makeHarness({ restoreConversation: false })
+    expect(await disabled.loadMemory(sessionId)).toBeUndefined()
+  })
+
   it('persists every utterance lifecycle and ignores stale or carrier-only events', async () => {
     const harness = makeHarness()
     const sessionId = SessionId('utterances')
@@ -637,8 +686,9 @@ describe('voice assistant branch coverage', () => {
     await harness.dispatch('session/event', task.agent.session, turnEnd(1, 'completed'))
     expect(harness.observations.at(-1)).toMatchObject({
       status: 'completed',
-      voiceMessage: { text: 'visible fallback' },
+      announcement: '任务已完成。',
     })
+    expect(harness.observations.at(-1)).not.toHaveProperty('voiceMessage')
     expect(harness.warnings).toHaveLength(1)
     expect(() => toolState.senders.at(-1)?.({
       delegationId: taskId,
@@ -659,6 +709,63 @@ describe('voice assistant branch coverage', () => {
     await harness.dispatch('session/event', secondTask.agent.session, turnEnd(2, 'completed'))
     expect(harness.observations.at(-1)).toMatchObject({ taskId: secondTaskId, status: 'completed' })
     expect(harness.warnings).toHaveLength(2)
+  })
+
+  it('reuses one continuous task Agent across distinct sequential delegations', async () => {
+    const harness = makeHarness({ taskSessionPolicy: 'continuous' })
+    const sessionId = SessionId('continuous-source')
+    const source = harness.makeSession(sessionId)
+    harness.agents.set(sessionId, harness.makeAgent(source))
+    const voice = await harness.open(sessionId, 'frontend-agent')
+
+    const firstTaskId = await startDelegation(harness, voice, 'first task')
+    const first = harness.bindings.get(sessionId)?.active
+    if (first === undefined) throw new Error('first continuous task missing')
+    const firstMessage = (first.agent.followup as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as UserMessage
+    await harness.dispatch('agent/inbox/claimed', { agent: first.agent, message: firstMessage, turn: 1 })
+    toolState.senders[0]?.({ delegationId: firstTaskId, channel: 'COMPLETE', message: 'first spoken result' })
+    await harness.dispatch('session/event', first.agent.session, turnEnd(1, 'completed'))
+
+    const secondTaskId = await startDelegation(harness, voice, 'second task')
+    const second = harness.bindings.get(sessionId)?.active
+    if (second === undefined) throw new Error('second continuous task missing')
+    expect(secondTaskId).not.toBe(firstTaskId)
+    expect(second.taskSessionId).toBe(first.taskSessionId)
+    expect(second.agent).toBe(first.agent)
+    expect(harness.created).toHaveLength(1)
+    expect(second.agent.followup).toHaveBeenCalledTimes(2)
+    expect(toolState.senders).toHaveLength(1)
+
+    const delegatedSessions = source.events.flatMap(event => (
+      event.type === 'voice/task-delegated' ? [event.data.taskSessionId] : []
+    ))
+    expect(delegatedSessions).toEqual([first.taskSessionId, first.taskSessionId])
+    expect(harness.taskBindings.get(first.taskSessionId)).toBe(harness.bindings.get(sessionId))
+  })
+
+  it('resumes the latest continuous task Session after the assistant plugin restarts', async () => {
+    const harness = makeHarness({ taskSessionPolicy: 'continuous' })
+    const sourceId = SessionId('continuous-restart-source')
+    const taskSessionId = SessionId('continuous-restart-task')
+    const source = harness.makeSession(sourceId)
+    harness.makeSession(taskSessionId)
+    harness.agents.set(sourceId, harness.makeAgent(source))
+    source.append('voice/task-delegated', {
+      taskId: VoiceTaskId('previous-delegation'),
+      taskSessionId,
+      input: 'previous task',
+    })
+    const voice = await harness.open(sourceId, 'frontend-agent')
+
+    const nextTaskId = await startDelegation(harness, voice, 'continue after restart')
+    const active = harness.bindings.get(sourceId)?.active
+    if (active === undefined) throw new Error('resumed continuous task missing')
+    expect(nextTaskId).not.toBe(VoiceTaskId('previous-delegation'))
+    expect(active.taskSessionId).toBe(taskSessionId)
+    expect(active.agent.id).toBe(taskSessionId)
+    expect(active.agent.followup).toHaveBeenCalledOnce()
+    expect(harness.created).toHaveLength(1)
+    expect(harness.taskBindings.get(taskSessionId)).toBe(harness.bindings.get(sourceId))
   })
 
   it('uses default model and announcement fallbacks when no header or preset exists', async () => {

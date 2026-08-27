@@ -9,6 +9,7 @@ import type {
   TaskCommandResult,
   TaskObservation,
   VoiceCommandCallId,
+  VoiceConversationMemory,
   VoiceEvent,
   VoiceProvider,
   VoiceProviderEvent,
@@ -16,6 +17,9 @@ import type {
   VoiceResponsePolicy,
   VoiceSessionInfo,
 } from './types.ts'
+
+/** Loads bounded durable context for a fresh provider conversation. */
+export type VoiceMemorySource = (agentSessionId: SessionId) => Promise<VoiceConversationMemory | undefined>
 
 export * from './types.ts'
 
@@ -83,6 +87,7 @@ export class VoiceRuntime extends Service {
   })
   private readonly providers = new Map<string, VoiceProvider>()
   private readonly sessions = new Map<VoiceSessionId, LiveSession>()
+  private readonly memory = { source: undefined as VoiceMemorySource | undefined }
   private readonly configuredProvider: string | undefined
   private readonly maxCommandCalls: number
   private readonly reconnectGraceMs: number
@@ -114,6 +119,19 @@ export class VoiceRuntime extends Service {
   }
 
   /**
+   * Register the sole durable conversation-memory source.
+   * @param source - loader keyed by the durable source Agent session.
+   * @returns disposer removing it when still current.
+   */
+  registerMemorySource(source: VoiceMemorySource): () => void {
+    if (this.memory.source !== undefined) throw new Error('voice conversation memory source is already registered')
+    this.memory.source = source
+    return () => {
+      if (this.memory.source === source) this.memory.source = undefined
+    }
+  }
+
+  /**
    * Open or reattach a voice transport for an Agent session.
    * @param agentSessionId - durable Agent identity.
    * @returns connected session metadata.
@@ -131,10 +149,12 @@ export class VoiceRuntime extends Service {
     }
     const id = VoiceSessionId(randomUUID())
     const provider = this.resolveProvider()
+    const memory = await this.memory.source?.(agentSessionId)
     const holder: { live?: LiveSession } = {}
     const connected = await provider.connect({
       voiceSessionId: id,
       agentSessionId,
+      ...(memory !== undefined && memory.items.length > 0 ? { memory } : {}),
       emit: (event) => {
         const live = holder.live
         if (live === undefined || this.sessions.get(id) !== live) return

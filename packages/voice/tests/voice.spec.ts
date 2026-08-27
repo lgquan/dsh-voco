@@ -282,6 +282,46 @@ describe('voice runtime', () => {
     await ctx.voice.close(second.id)
   })
 
+  it('restores memory only for fresh provider conversations and manages one memory source', async () => {
+    const ctx = new Context()
+    await ctx.plugin(VoiceRuntime, { provider: 'test', reconnectGraceMs: 1_000 })
+    const sessions = [providerSession(), providerSession()]
+    const connect = vi.fn((input: Parameters<Parameters<typeof ctx.voice.registerProvider>[0]['connect']>[0]) => (
+      Promise.resolve(sessions[connect.mock.calls.length - 1]!.session)
+    ))
+    ctx.voice.registerProvider({ id: 'test', available: () => true, connect })
+    const memory = {
+      items: [
+        { role: 'user' as const, text: '还记得之前的问题吗？' },
+        { role: 'assistant' as const, text: '记得，我们继续。' },
+      ],
+    }
+    const loadMemory = vi.fn(async (sessionId: SessionId) => {
+      expect(sessionId).toBe(SessionId('agent-memory'))
+      return memory
+    })
+    const disposeMemory = ctx.voice.registerMemorySource(loadMemory)
+    expect(() => { ctx.voice.registerMemorySource(async () => undefined) }).toThrow('already registered')
+
+    const first = await ctx.voice.open(SessionId('agent-memory'))
+    ctx.voice.detach(first.id)
+    const reattached = await ctx.voice.open(SessionId('agent-memory'))
+    expect(reattached).toEqual(first)
+    expect(loadMemory).toHaveBeenCalledOnce()
+    expect(connect).toHaveBeenCalledOnce()
+
+    await ctx.voice.close(reattached.id)
+    const restarted = await ctx.voice.open(SessionId('agent-memory'))
+    expect(loadMemory).toHaveBeenCalledTimes(2)
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(connect.mock.calls.map(([input]) => input.memory)).toEqual([memory, memory])
+
+    disposeMemory()
+    const disposeReplacement = ctx.voice.registerMemorySource(async () => undefined)
+    disposeReplacement()
+    await ctx.voice.close(restarted.id)
+  })
+
   it('closes a detached provider after the configured reconnect grace', async () => {
     vi.useFakeTimers()
     try {

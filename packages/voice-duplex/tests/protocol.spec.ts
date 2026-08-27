@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { VoiceCommandCallId, VoiceTaskId } from '@wayneyu430227/dsh-voice'
 import {
   audioAppend,
+  conversationTextCreateItem,
   conversationTextUpdateItem,
   decodeEvent,
   decodeTaskCommandCalls,
@@ -64,6 +65,19 @@ describe('Duplex protocol migration', () => {
     expect(conversationTextUpdateItem('question-1', 'question plus observation')).toEqual({
       id: 'question-1',
       content: [{ type: 'input_text', text: 'question plus observation' }],
+    })
+  })
+
+  it('encodes restored user and assistant text with provider-native content roles', () => {
+    expect(conversationTextCreateItem({ role: 'user', text: '继续刚才的话题' })).toEqual({
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text: '继续刚才的话题' }],
+    })
+    expect(conversationTextCreateItem({ role: 'assistant', text: '好，我们继续。' })).toEqual({
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: '好，我们继续。' }],
     })
   })
 

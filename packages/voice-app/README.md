@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Patch-layer bundle for the `voice` profile. It layers over `dsh-base` and `dsh-web-app`, then mounts the provider-neutral voice seam, ByteDance Duplex provider, ordinary text-Agent consumer, dedicated browser WebSocket, and microphone/playback client surface. Starting a Voice conversation creates a fresh ordinary, ungrouped source Session at the current Workspace or Session directory and attaches the provider transport to it; keeping that source outside Workspace membership prevents standard blank-Session reuse. Each accepted delegation creates an independent ordinary task Session, linked from a compact card while root-owned audio continues across navigation. A plugin-owned browser history index exposes saved Voice Sessions from the sidebar without Host or Workspace-specific metadata. Configure the Duplex access key through the `DUPLEX_API_KEY` credential reference.
+The `dsh-live` patch-layer bundle attaches provider transport directly to the current source Session and restores recent conversation from durable `voice/utterance-end` events. Delegations from one source Session continuously reuse one ordinary task Agent Session. Full results remain in the task UI while `COMPLETE` carries an adaptive, conversational spoken response. Root-owned audio continues across navigation, and the browser history index exposes saved Voice Sessions in the sidebar.
 
 ## Model Experience
 
@@ -18,11 +18,11 @@ Accepted delegation text, ordinary task work, and backend reporting calls consum
 
 #### KV Cache effect
 
-Only accepted commands extend the independent task Agent's history; the Voice Session transcript and frontend conversation do not alter its request prefix.
+Only accepted commands extend the continuously reused task Agent history; recent Voice Session utterances restore a fresh Duplex conversation.
 
 ## Known Limitations and Deferred Work
 
 - The shipped first provider is Duplex; the service seam is provider-neutral so Realtime/Live providers can be added without changing the assistant consumer.
-- Raw audio and provider conversation state remain process-local; completed or interrupted utterance text and task links are durable.
+- Raw audio remains process-local; a fresh provider connection restores bounded context from durable completed utterance text.
 - The filtered Voice history index is browser-local; clearing site data does not delete the underlying Sessions.
 - The browser client surface targets the dsh Web UI: it is emitted by the copied dsh client tsdown preset and loads through the dsh web runtime's `window.__ModuleLoader__` contract. The server-side packages are transport-agnostic, but the microphone/playback UI is not a standalone browser plugin.

@@ -24,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-export const inject = ['conversationEvents', 'slots', 'sessions', 'workspaces', 'locale']
+export const inject = ['conversationEvents', 'slots', 'sessions', 'locale']
 
 /** Mount root transport controls and durable Voice conversation renderers. @param ctx - browser context. */
 export function apply(ctx: ClientContext): void {
@@ -32,19 +32,9 @@ export function apply(ctx: ClientContext): void {
   const history = new VoiceHistoryStore()
   const stopVoice = (): Promise<void> => controller.stop()
   const startVoice = async (sourceSessionId: SessionId): Promise<void> => {
-    const workspace = ctx.workspaces.list.getSnapshot().items
-      .find(item => item.sessionIds.includes(sourceSessionId))
-    if (workspace === undefined) {
-      console.warn('voice: cannot start without a workspace for the current session')
-      return
-    }
-    // Reuse the workspace's blank session or mint a fresh one through the
-    // existing workspaces API; a completed voice conversation is never blank
-    // (voice-assistant records its turn), so it is never wrongly reused here.
-    const voiceSessionId = await ctx.workspaces.connectWorkspace(workspace.workspaceId)
-    ctx.sessions.open(voiceSessionId)
-    await controller.start(voiceSessionId)
-    history.record(voiceSessionId)
+    ctx.sessions.open(sourceSessionId)
+    await controller.start(sourceSessionId)
+    history.record(sourceSessionId)
   }
   const voiceControlInjected = (): VoiceControlInjected => ({
     hooks: { voice: controller },

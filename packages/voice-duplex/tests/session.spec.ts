@@ -10,6 +10,7 @@ import {
   VoiceUtteranceId,
   type TaskCommandCall,
   type TaskObservation,
+  type VoiceConversationMemory,
   type VoiceProviderEvent,
 } from '@wayneyu430227/dsh-voice'
 import { decodeEvent, DuplexSession, type DuplexDiagnosticEntry, type RawEvent } from '@wayneyu430227/dsh-voice-duplex'
@@ -206,6 +207,7 @@ function createDetachedSession(
 async function connectTestSession(
   voiceSessionId = TEST_VOICE_SESSION_ID,
   overrides: Partial<SessionConfig> = {},
+  memory?: VoiceConversationMemory,
 ): Promise<TestConnection> {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await once(server, 'listening')
@@ -241,7 +243,7 @@ async function connectTestSession(
     transcriptionDeltaTimeoutMs: 1000,
     diagnosticTrace: false,
     ...overrides,
-  }, voiceSessionId, (event) => { events.push(event) })
+  }, voiceSessionId, (event) => { events.push(event) }, undefined, memory)
   return {
     events,
     frames,
@@ -260,6 +262,31 @@ async function connectTestSession(
 }
 
 describe('Duplex frontend-Agent session', () => {
+  it('restores ordered conversation memory before returning the connected session', async () => {
+    const memory = {
+      items: [
+        { role: 'user' as const, text: '第一个问题' },
+        { role: 'assistant' as const, text: '第一次回答' },
+        { role: 'user' as const, text: '继续说' },
+      ],
+    }
+    const connection = await connectTestSession(TEST_VOICE_SESSION_ID, {}, memory)
+    try {
+      await waitFor(() => connection.frames.length >= 2)
+      expect(connection.frames.map(frame => frame.type).slice(0, 2)).toEqual([
+        'session.create',
+        'conversation.item.create',
+      ])
+      expect(connection.frames[1]?.items).toEqual([
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: '第一个问题' }] },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '第一次回答' }] },
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: '继续说' }] },
+      ])
+    } finally {
+      await connection.close()
+    }
+  })
+
   it('normalizes stable ASR identities and correlated response text and audio', async () => {
     const connection = await connectTestSession()
     try {

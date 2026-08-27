@@ -40,8 +40,12 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
       + 'use send_voice_message with its delegation_id to keep the realtime voice assistant informed. '
       + 'Send STATUS only for meaningful user-facing progress; each STATUS is recorded silently and may '
       + 'be sent more than once. Before a '
-      + 'successful turn ends, send COMPLETE exactly once with the self-contained result the user should '
-      + 'hear. The voice assistant does not automatically see your transcript, tool output, or reasoning. '
+      + 'successful turn ends, send COMPLETE exactly once with the natural conversational response the user '
+      + 'should hear. Lead with the conclusion and adapt detail to the request: brief for simple outcomes, '
+      + 'longer when complexity or the user requires it. Do not impose a character limit. Do not recite '
+      + 'Markdown structure, code blocks, logs, command output, or exhaustive file lists; summarize those '
+      + 'for speech while leaving the full report in the task UI. The voice assistant does not automatically '
+      + 'see your transcript, tool output, or reasoning. '
       + 'COMPLETE is held until the turn actually succeeds, and reporting never ends your turn. Do not use '
       + 'this tool for ordinary requests without a realtime_delegation envelope.',
   })
@@ -51,7 +55,9 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
       name: 'send_voice_message',
       description: 'Send a user-facing status or final result to the realtime voice assistant for the exact '
         + 'active delegation. STATUS is recorded silently and may repeat for meaningful progress. COMPLETE '
-        + 'may be called once with a self-contained result and is held until the Agent turn succeeds; it does '
+        + 'may be called once with a natural, conclusion-first spoken response whose detail adapts to the '
+        + 'request without a fixed length cap. Summarize report-only formatting, code, logs, and file lists. '
+        + 'COMPLETE is held until the Agent turn succeeds; it does '
         + 'not finish the turn. The voice assistant does not otherwise see this Agent transcript or tool output.',
       parameters: {
         delegation_id: {
@@ -68,7 +74,7 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
         message: {
           type: 'string',
           required: true,
-          description: 'Self-contained user-facing message for the realtime voice assistant to speak or summarize.',
+          description: 'Natural self-contained spoken message. Use adaptive detail, no fixed character cap, and avoid reading report formatting or raw technical output aloud.',
         },
       },
       output: {

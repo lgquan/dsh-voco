@@ -1,14 +1,23 @@
 {
-  "name": "dsh-voice-agent",
+  "name": "dsh-live",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b"
+  },
   "devDependencies": {
-    "typescript": "^6.0.3",
-    "tsdown": "^0.22.2",
+    "@types/node": "^22.20.0",
+    "jsdom": "^30.0.1",
     "lightningcss": "^1.32.0",
-    "@types/node": "^22.20.0"
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
   }
 }
