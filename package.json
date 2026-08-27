@@ -8,10 +8,11 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
+    "postinstall": "node speech/setup-local-voice.mjs",
     "build": "tsc -b && tsdown",
     "test": "vitest run",
     "typecheck": "tsc -b",
-    "setup:voice-local": "powershell -ExecutionPolicy Bypass -File speech/setup-local-voice.ps1"
+    "setup:voice-local": "node speech/setup-local-voice.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

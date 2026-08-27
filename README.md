@@ -8,7 +8,7 @@
 
 ## 交互
 
-- **本地实时对话**：浏览器采集音频，经本地 VAD、FunASR 和 MOSS-TTS-Nano 处理，支持边说边听和打断。
+- **本地实时对话**：浏览器采集音频，经本地 Silero VAD、流式 Paraformer ONNX 和 MOSS-TTS-Nano ONNX 处理，支持边说边听和打断。
 - **对话式派活**：前端只暴露三个编排工具——`realtime_delegation`（把「帮我查一下 xxx」变成真正的后台任务）、`send_task_message`（补充要求 / 纠正方向）、`cancel_task`（取消）。
 - **连续任务上下文**：同一语音会话的多次委派复用一个后台 Agent Session，每次任务仍有独立 delegation id。
 - **异步结果回灌**：进度（STATUS）和口语结果（COMPLETE）会回灌进语音对话；回复按问题复杂度自适应详略，不设固定字数上限。
@@ -20,7 +20,6 @@
 ```powershell
 pnpm install
 pnpm build
-pnpm run setup:voice-local
 $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
@@ -35,7 +34,9 @@ dsh web
 
 ## 本地语音环境
 
-安装后先执行 `pnpm run setup:voice-local`。它会在 `speech/.venv` 创建独立 Python 环境，安装 `speech/requirements.txt`，并预下载 FunASR 与 MOSS-TTS-Nano ONNX 模型。之后再执行 `dsh web`，运行阶段只从 D 盘缓存加载，不临时下载模型。worker 会将 ModelScope、Torch 和 Hugging Face 缓存放在 `speech/.cache`，避免占用系统盘。
+`pnpm install` 会自动运行跨平台模型安装器，把 Silero VAD、中文/英文流式 Paraformer 和 MOSS-TTS-Nano ONNX 权重下载到 `speech/models`。当前仓库位于 D 盘，因此模型不会占用系统盘；`dsh web` 启动时只加载本地文件，不临时联网下载。安装器可重复执行：`pnpm run setup:voice-local`。
+
+语音运行时完全使用 TypeScript/Node 与预编译 ONNX 原生包，不要求 Python、pip、虚拟环境或 PyTorch。支持 Windows x64，以及 macOS Intel 和 Apple Silicon。
 
 ## 限制
 

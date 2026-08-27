@@ -8,12 +8,11 @@
     - id: voice-local
       name: '@lgquan/dsh-voice-local'
       config:
-        pythonPath: speech/.venv/Scripts/python.exe
-        workerScript: ../../../speech/worker.py
-        ttsRoot: speech/moss_tts_runtime
         startupTimeoutMs: 120000
         inputSampleRate: 16000
         outputSampleRate: 48000
+        threads: 4
+        voice: Junhao
 
     - id: voice-assistant
       name: '@lgquan/dsh-voice-assistant'

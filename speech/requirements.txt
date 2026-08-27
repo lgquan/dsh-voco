@@ -1,9 +1,0 @@
-funasr>=1.2.0
-huggingface_hub>=0.24.0
-modelscope>=1.20.0
-numpy>=1.24
-onnxruntime>=1.18.0
-sentencepiece>=0.1.99
-silero-vad>=5.1.2
-soundfile>=0.12.1
-torch>=2.3.0

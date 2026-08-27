@@ -1,38 +1,24 @@
-# dsh-live local speech worker
+# dsh-live local ONNX models
 
-The worker is a long-lived JSON-lines process used by voice-local.
+`setup-local-voice.mjs` is the cross-platform installation adapter for local
+speech models. It runs automatically from `pnpm install` and can also be run
+manually:
 
-Input messages:
+```sh
+pnpm run setup:voice-local
+```
 
-- audio: base64 PCM16 mono 16 kHz
-- commit
-- synthesize with responseId and text
-- interrupt
-- close
+Assets are stored in `speech/models` and are intentionally excluded from Git:
 
-Output is newline-delimited JSON containing readiness, transcription, streamed
-PCM16 TTS chunks, errors, and close events. Models are loaded once per worker.
-The repository includes the small MOSS ONNX runtime adapter under
-`speech/moss_tts_runtime`. Set `DSH_MOSS_TTS_ROOT` (or pass `--tts-root`) only
-when replacing it with another compatible checkout. Set `DSH_MOSS_MODEL_DIR` (or
-pass `--model-dir`) to the external ONNX model directory. Runtime source is
-committed; model weights are not.
+- `vad/silero_vad.onnx`
+- `asr/paraformer`: bilingual Chinese/English streaming Paraformer
+- `tts/MOSS-TTS-Nano-100M-ONNX`
+- `tts/MOSS-Audio-Tokenizer-Nano-ONNX`
 
-ModelScope, Torch, and Hugging Face caches are redirected to `speech/.cache`
-by default. Since this repository is on D:, model downloads do not consume the
-system drive.
+The installer downloads to `.part` files and renames them only after a complete
+transfer. Existing non-empty files are reused. Application startup never
+downloads models.
 
-Install the speech environment separately from the Node workspace:
-
-    uv venv --python 3.10 .venv-speech
-    uv pip install --python .venv-speech\Scripts\python.exe -r speech\requirements.txt
-
-Development example:
-
-    $env:DSH_MOSS_TTS_ROOT = "$PWD\prototypes\local-voice-benchmark\vendor\MOSS-TTS-Nano"
-    $env:DSH_MOSS_MODEL_DIR = "$env:DSH_MOSS_TTS_ROOT\models"
-    .\.venv-speech\Scripts\python.exe speech\worker.py
-
-For a normal installation, run `pnpm run setup:voice-local` from the repository
-root before starting DSH. The setup command is idempotent and may be rerun after
-upgrading dependencies or deleting the cache.
+Runtime code is in `packages/voice-local`. It uses `sherpa-onnx-node`,
+`onnxruntime-node`, and a SentencePiece WASM tokenizer; Python, pip, Torch, and
+virtual environments are not part of the runtime or installation flow.
