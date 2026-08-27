@@ -897,11 +897,23 @@ export function apply(ctx: Context, config: Config = {}): void {
       const disposers = [task?.disposeVoiceMessage, binding.continuousTaskAgent?.disposeVoiceMessage]
       if (task !== undefined) {
         try {
+          const sourceSession = requireSourceSession(binding)
+          const lastProgress = sourceSession.events.findLast(event => (
+            event.type === 'voice/task-observation'
+            && event.data.taskId === task.id
+            && (event.data.voiceHint !== undefined || event.data.voiceMessage !== undefined)
+          ))
+          const lastSpokenText = lastProgress?.type === 'voice/task-observation'
+            ? lastProgress.data.voiceHint ?? lastProgress.data.voiceMessage?.text
+            : undefined
+          const announcement = lastSpokenText === undefined
+            ? config.interruptedAnnouncement ?? '上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。'
+            : `上次任务在“${lastSpokenText}”之后因服务关闭而中断，没有自动重放。你可以告诉我是否继续。`
           append(binding, {
             taskId: task.id,
             status: 'interrupted',
             ...(task.taskTurn === undefined ? {} : { taskTurn: task.taskTurn }),
-            announcement: config.interruptedAnnouncement ?? '上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。',
+            announcement,
             reason: 'voice-assistant service stopped before the task finished',
           }, false, false)
           binding.lastTerminalTaskId = task.id

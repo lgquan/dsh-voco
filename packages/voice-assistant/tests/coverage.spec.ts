@@ -905,6 +905,32 @@ describe('voice assistant branch coverage', () => {
     })
   })
 
+  it('includes only the last spoken progress hint in the interruption recovery message', async () => {
+    const harness = makeHarness({ taskSessionPolicy: 'continuous' })
+    const sourceId = SessionId('progress-shutdown-source')
+    const source = harness.makeSession(sourceId)
+    harness.agents.set(sourceId, harness.makeAgent(source))
+    const voice = await harness.open(sourceId, 'frontend-agent')
+    const taskId = await startDelegation(harness, voice, 'inspect and modify')
+    toolState.senders[0]?.({
+      delegationId: taskId,
+      channel: 'STATUS',
+      message: '已经找到问题，正在修改。',
+      type: 'progress',
+      detail: 'Sensitive command output must remain in the task trace.',
+      voiceHint: '已经找到问题，正在修改。',
+    })
+
+    await expect(harness.cleanup?.()).resolves.toBeUndefined()
+    const interrupted = source.events.findLast(event => (
+      event.type === 'voice/task-observation' && event.data.status === 'interrupted'
+    ))
+    expect(interrupted?.type === 'voice/task-observation' ? interrupted.data.announcement : undefined)
+      .toBe('上次任务在“已经找到问题，正在修改。”之后因服务关闭而中断，没有自动重放。你可以告诉我是否继续。')
+    expect(interrupted?.type === 'voice/task-observation' ? interrupted.data.announcement : undefined)
+      .not.toContain('Sensitive command output')
+  })
+
   it('announces the latest interrupted task without replaying it after restart', async () => {
     const harness = makeHarness({ taskSessionPolicy: 'continuous' })
     const sourceId = SessionId('interrupted-recovery-source')
