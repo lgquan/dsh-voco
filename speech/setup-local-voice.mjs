@@ -53,7 +53,7 @@ async function download(url, destination) {
   let lastError
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'dsh-vox-model-installer/1.0' } })
+      const response = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'dsh-voco-model-installer/1.0' } })
       if (!response.ok || response.body === null) throw new Error(`HTTP ${response.status} ${response.statusText}`)
       await pipeline(Readable.fromWeb(response.body), createWriteStream(partial))
       if (!(await nonEmpty(partial))) throw new Error('downloaded file is empty')

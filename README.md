@@ -1,4 +1,4 @@
-# dsh-vox
+# dsh-voco
 
 [English](README.en.md) | 中文
 
@@ -24,7 +24,7 @@ $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
 
-项目名是 `dsh-vox`，内部包统一使用 `@lgquan/*` 命名空间。
+项目名是 `dsh-voco`，内部包统一使用 `@lgquan/*` 命名空间。
 
 `dsh` 命令来自 `npm install -g @deepseek-ai/dsh`。启动 web（voice 界面随之加载）：
 

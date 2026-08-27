@@ -1,4 +1,4 @@
-# dsh-vox
+# dsh-voco
 
 English | [中文](README.md)
 
@@ -24,7 +24,7 @@ $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
 
-The project is named `dsh-vox`, and all internal packages use the `@lgquan/*` namespace.
+The project is named `dsh-voco`, and all internal packages use the `@lgquan/*` namespace.
 
 The `dsh` command comes from `npm install -g @deepseek-ai/dsh`. Launch web (the voice surface loads with it):
 
