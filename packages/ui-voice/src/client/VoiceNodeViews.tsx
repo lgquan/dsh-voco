@@ -76,36 +76,45 @@ export function VoiceDelegationView({ node, sessionId, useSessions, useVoice, op
   const connected = useVoice(voice => voice.sessionId === sessionId && voice.state !== 'off' && voice.state !== 'error')
   const cancellable = connected && !isTerminalTaskStatus(node.data.status)
   return (
-    <article className={css.taskCard} data-voice-delegation data-status={node.data.status}>
-      <header className={css.taskHeader}>
+    <article
+      className={css.taskCard}
+      data-voice-delegation
+      data-status={node.data.status}
+      data-expanded={expanded}
+    >
+      <button
+        type="button"
+        className={css.taskSummary}
+        aria-expanded={expanded}
+        aria-label={expanded ? t('task.collapse') : t('task.expand')}
+        onClick={() => { setExpanded(value => !value) }}
+      >
         <span className={css.taskDot} aria-hidden />
         <span className={css.taskTitle}>{t('task.title')}</span>
         <span className={css.taskStatus}>{t(STATUS_KEYS[node.data.status])}</span>
-      </header>
+        <span className={css.taskChevron} aria-hidden />
+      </button>
       {expanded && (
         <div className={css.taskDetails}>
           <p className={css.taskInput}>{node.data.input}</p>
           {node.data.update !== undefined && <p className={css.taskUpdate}>{node.data.update}</p>}
+          <div className={css.taskActions}>
+            {cancellable && (
+              <button type="button" className={`${css.taskLink} ${css.taskCancel}`} onClick={() => { cancelTask(String(node.data.taskId)) }}>
+                {t('task.cancel')}
+              </button>
+            )}
+            <button
+              type="button"
+              className={css.taskLink}
+              disabled={!navigable}
+              onClick={() => { openSession(node.data.taskSessionId) }}
+            >
+              {t('task.open')}
+            </button>
+          </div>
         </div>
       )}
-      <div className={css.taskActions}>
-        <button type="button" className={css.taskLink} onClick={() => { setExpanded(value => !value) }}>
-          {expanded ? t('task.collapse') : t('task.expand')}
-        </button>
-        {cancellable && (
-          <button type="button" className={`${css.taskLink} ${css.taskCancel}`} onClick={() => { cancelTask(String(node.data.taskId)) }}>
-            {t('task.cancel')}
-          </button>
-        )}
-        <button
-          type="button"
-          className={css.taskLink}
-          disabled={!navigable}
-          onClick={() => { openSession(node.data.taskSessionId) }}
-        >
-          {t('task.open')}
-        </button>
-      </div>
     </article>
   )
 }

@@ -25,7 +25,7 @@ export const zh = {
   'utterance.user.pending': '正在聆听…',
   'utterance.assistant.pending': '正在生成语音回复…',
   'utterance.interrupted': '已打断',
-  'task.title': '委派任务',
+  'task.title': '后台处理',
   'task.status.accepted': '已接受',
   'task.status.queued': '排队中',
   'task.status.running': '执行中',
@@ -34,10 +34,10 @@ export const zh = {
   'task.status.failed': '失败',
   'task.status.cancelled': '已取消',
   'task.status.interrupted': '服务中断',
-  'task.expand': '展开摘要',
-  'task.collapse': '收起摘要',
+  'task.expand': '展开后台处理详情',
+  'task.collapse': '收起后台处理详情',
   'task.cancel': '取消任务',
-  'task.open': '打开任务',
+  'task.open': '查看后台详情',
 } satisfies Record<string, string>
 
 /** Union of this namespace's dictionary keys. */
@@ -65,7 +65,7 @@ export const en = {
   'utterance.user.pending': 'Listening…',
   'utterance.assistant.pending': 'Generating voice response…',
   'utterance.interrupted': 'Interrupted',
-  'task.title': 'Delegated task',
+  'task.title': 'Background task',
   'task.status.accepted': 'Accepted',
   'task.status.queued': 'Queued',
   'task.status.running': 'Running',
@@ -74,8 +74,8 @@ export const en = {
   'task.status.failed': 'Failed',
   'task.status.cancelled': 'Cancelled',
   'task.status.interrupted': 'Interrupted',
-  'task.expand': 'Show summary',
-  'task.collapse': 'Hide summary',
+  'task.expand': 'Show background task details',
+  'task.collapse': 'Hide background task details',
   'task.cancel': 'Cancel task',
-  'task.open': 'Open task',
+  'task.open': 'View background details',
 } satisfies Record<VoiceKey, string>

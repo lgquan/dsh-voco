@@ -68,20 +68,28 @@
 
 .taskCard {
   box-sizing: border-box;
-  width: 100%;
+  width: fit-content;
+  max-width: min(525px, 100%);
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-module-platform);
 }
 
-.taskHeader {
-  display: flex;
+.taskSummary {
+  display: inline-flex;
   align-items: center;
   gap: 7px;
+  max-width: 100%;
   min-width: 0;
+  margin: -3px -5px;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
 }
+
+.taskSummary:hover { background: var(--dsw-alias-bg-layer-1); }
 
 .taskDot {
   flex: none;
@@ -98,7 +106,6 @@
 
 .taskTitle {
   overflow: hidden;
-  flex: 1;
   min-width: 0;
   color: var(--dsw-alias-label-secondary);
   font-size: 13px;
@@ -115,24 +122,48 @@
   line-height: 16px;
 }
 
+.taskStatus::before {
+  margin-right: 7px;
+  content: '·';
+}
+
+.taskChevron {
+  width: 6px;
+  height: 6px;
+  margin: 0 2px 0 1px;
+  border-right: 1px solid var(--dsw-alias-label-tertiary);
+  border-bottom: 1px solid var(--dsw-alias-label-tertiary);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.taskCard[data-expanded='true'] .taskChevron { transform: rotate(45deg); }
+
 .taskInput,
 .taskUpdate {
-  margin: 6px 0 0;
+  margin: 0;
   overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 20px;
 }
 
 .taskInput { color: var(--dsw-alias-label-primary); }
-.taskUpdate { color: var(--dsw-alias-label-secondary); }
+.taskUpdate {
+  margin-top: 4px;
+  color: var(--dsw-alias-label-secondary);
+}
 
-.taskDetails { margin-top: 6px; }
+.taskDetails {
+  margin: 9px 0 0 3px;
+  padding: 2px 0 2px 16px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
 
 .taskActions {
   display: flex;
   gap: 14px;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 7px;
 }
 
 .taskLink {
