@@ -70,8 +70,10 @@ interface CapturedTask {
   taskTurn?: number
   lastAssistantMessage?: { readonly id: string; readonly text: string }
   completionMessage?: { readonly id: string; readonly text: string }
+  completionDetail?: string
   disposeVoiceMessage?: () => void
   cancelling: boolean
+  waitingUser: boolean
 }
 
 interface CapturedBinding {
@@ -771,6 +773,67 @@ describe('voice assistant branch coverage', () => {
     expect(harness.taskBindings.get(taskSessionId)).toBe(harness.bindings.get(sourceId))
   })
 
+  it('keeps a question task active and resumes the same Agent after the user replies', async () => {
+    const harness = makeHarness({ taskSessionPolicy: 'continuous' })
+    const sourceId = SessionId('waiting-source')
+    const source = harness.makeSession(sourceId)
+    harness.agents.set(sourceId, harness.makeAgent(source))
+    const voice = await harness.open(sourceId, 'frontend-agent')
+    const taskId = await startDelegation(harness, voice, 'prepare a destructive migration')
+    const task = harness.bindings.get(sourceId)?.active
+    if (task === undefined) throw new Error('waiting task missing')
+    const firstMessage = (task.agent.followup as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as UserMessage
+    await harness.dispatch('agent/inbox/claimed', { agent: task.agent, message: firstMessage, turn: 1 })
+
+    toolState.senders[0]?.({
+      delegationId: taskId,
+      channel: 'STATUS',
+      message: '需要确认。',
+      type: 'question',
+      detail: 'Migration deletes the old index and requires explicit confirmation.',
+      voiceHint: '这一步会删除旧索引，需要你确认后我再继续。',
+    })
+    expect(harness.observations.at(-1)).toMatchObject({
+      taskId,
+      status: 'waiting-user',
+      type: 'question',
+      voiceHint: '这一步会删除旧索引，需要你确认后我再继续。',
+    })
+    await harness.dispatch('session/event', task.agent.session, turnEnd(1, 'completed'))
+    expect(harness.bindings.get(sourceId)?.active).toBe(task)
+    expect(task.taskTurn).toBeUndefined()
+
+    await harness.voiceEvent(voice, {
+      type: 'task.command',
+      call: {
+        id: VoiceCommandCallId('waiting-reply'),
+        command: { type: 'send_task_message', taskId, message: '确认继续' },
+      },
+    })
+    expect(task.agent.followup).toHaveBeenCalledTimes(2)
+    expect(task.agent.steer).not.toHaveBeenCalled()
+    expect(harness.observations.at(-1)).toMatchObject({ taskId, status: 'queued' })
+
+    const secondMessage = (task.agent.followup as ReturnType<typeof vi.fn>).mock.calls[1]?.[0] as UserMessage
+    await harness.dispatch('agent/inbox/claimed', { agent: task.agent, message: secondMessage, turn: 2 })
+    toolState.senders[0]?.({
+      delegationId: taskId,
+      channel: 'COMPLETE',
+      message: '迁移已完成。',
+      type: 'result',
+      detail: 'Migration and verification completed.',
+      voiceHint: '迁移已经完成，并且验证通过。',
+    })
+    await harness.dispatch('session/event', task.agent.session, turnEnd(2, 'completed'))
+    expect(harness.bindings.get(sourceId)?.active).toBeUndefined()
+    expect(harness.observations.at(-1)).toMatchObject({
+      taskId,
+      status: 'completed',
+      type: 'result',
+      voiceHint: '迁移已经完成，并且验证通过。',
+    })
+  })
+
   it('records an active task as interrupted during service shutdown', async () => {
     const harness = makeHarness({ taskSessionPolicy: 'continuous' })
     const sourceId = SessionId('shutdown-source')
@@ -1046,6 +1109,7 @@ describe('voice assistant branch coverage', () => {
         agent,
         taskTurn: index,
         cancelling: false,
+        waitingUser: false,
       }
       harness.taskBindings.set(binding.active.taskSessionId, binding)
       await harness.dispatch('session/event', {

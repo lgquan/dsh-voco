@@ -310,7 +310,12 @@ describe('voice assistant driver', () => {
       signal: new AbortController().signal,
       callId: CallId('voice-status'),
       name: 'send_voice_message',
-      arguments: { delegation_id: taskId, channel: 'STATUS', message: '正在检查语音模块。' },
+      arguments: {
+        delegation_id: taskId,
+        type: 'progress',
+        detail: '正在扫描 packages/voice-assistant 的实现与测试。',
+        voice_hint: '正在检查语音模块。',
+      },
       agent: firstTask.agent,
     })
     expect(statusResult).toMatchObject({ isError: false, value: { delivery: 'queued' } })
@@ -319,22 +324,30 @@ describe('voice assistant driver', () => {
       status: 'running',
       taskTurn: 1,
       channel: 'STATUS',
+      type: 'progress',
+      detail: '正在扫描 packages/voice-assistant 的实现与测试。',
+      voiceHint: '正在检查语音模块。',
       voiceMessage: { text: '正在检查语音模块。' },
     })
-    expect(requestResponse).not.toHaveBeenCalled()
+    expect(requestResponse).toHaveBeenCalledTimes(1)
 
     const completeResult = await ctx.tools.execute({
       signal: new AbortController().signal,
       callId: CallId('voice-complete'),
       name: 'send_voice_message',
-      arguments: { delegation_id: taskId, channel: 'COMPLETE', message: '检查完成，没有发现问题。' },
+      arguments: {
+        delegation_id: taskId,
+        type: 'result',
+        detail: '语音模块检查完成，相关测试全部通过。',
+        voice_hint: '检查完成，没有发现问题。',
+      },
       agent: firstTask.agent,
     })
     expect(completeResult).toMatchObject({
       isError: false,
       value: { delivery: 'held_until_turn_end' },
     })
-    expect(requestResponse).not.toHaveBeenCalled()
+    expect(requestResponse).toHaveBeenCalledTimes(1)
     const duplicateComplete = await ctx.tools.execute({
       signal: new AbortController().signal,
       callId: CallId('voice-complete-duplicate'),
@@ -367,9 +380,12 @@ describe('voice assistant driver', () => {
       status: 'completed',
       taskTurn: 1,
       channel: 'COMPLETE',
+      type: 'result',
+      detail: '语音模块检查完成，相关测试全部通过。',
+      voiceHint: '检查完成，没有发现问题。',
       voiceMessage: { text: '检查完成，没有发现问题。' },
     })
-    expect(requestResponse).toHaveBeenCalledTimes(1)
+    expect(requestResponse).toHaveBeenCalledTimes(2)
 
     const loggedObservations = session.events.flatMap(event =>
       event.type === 'voice/task-observation' ? [event.data] : [])
@@ -449,7 +465,7 @@ describe('voice assistant driver', () => {
       channel: 'STATUS',
       voiceMessage: { text: '断线期间仍在执行。' },
     })
-    expect(requestResponse).toHaveBeenCalledTimes(1)
+    expect(requestResponse).toHaveBeenCalledTimes(2)
     emit?.({
       type: 'task.command',
       call: { id: VoiceCommandCallId('call-cancel'), command: { type: 'cancel_task', taskId: cancelTaskId } },
@@ -463,7 +479,7 @@ describe('voice assistant driver', () => {
     secondTask.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
     await settle()
     expect(observations.at(-1)).toMatchObject({ taskId: cancelTaskId, status: 'cancelled' })
-    expect(requestResponse).toHaveBeenCalledTimes(2)
+    expect(requestResponse).toHaveBeenCalledTimes(3)
     expect(session.events.flatMap(event =>
       event.type === 'voice/task-observation' ? [event.data] : [])).toEqual(observations)
 
@@ -480,7 +496,7 @@ describe('voice assistant driver', () => {
       kind: 'rejected', code: 'backend_unavailable', message: 'followup unavailable',
     })
     expect(observations.at(-1)).toMatchObject({ status: 'failed', reason: 'followup unavailable' })
-    expect(requestResponse).toHaveBeenCalledTimes(3)
+    expect(requestResponse).toHaveBeenCalledTimes(4)
     await ctx.voice.close(reconnectedVoice.id)
     await settle()
     expect(ctx.tools.get('send_voice_message', secondTask.agent)).toBeUndefined()

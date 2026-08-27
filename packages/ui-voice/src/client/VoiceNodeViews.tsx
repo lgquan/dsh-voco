@@ -55,7 +55,9 @@ export function VoiceUtteranceView({ node, sessionId, useVoice, t }: VoiceUttera
 
 const STATUS_KEYS: Record<VoiceDelegationChatData['status'], VoiceKey> = {
   accepted: 'task.status.accepted',
+  queued: 'task.status.queued',
   running: 'task.status.running',
+  'waiting-user': 'task.status.waiting-user',
   completed: 'task.status.completed',
   failed: 'task.status.failed',
   cancelled: 'task.status.cancelled',

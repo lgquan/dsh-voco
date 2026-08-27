@@ -75,8 +75,10 @@ interface ActiveTask {
   taskTurn?: number
   lastAssistantMessage?: VoiceTaskMessage
   completionMessage?: VoiceTaskMessage
+  completionDetail?: string
   disposeVoiceMessage?: () => void
   cancelling: boolean
+  waitingUser: boolean
 }
 
 interface OpenUtterance {
@@ -298,12 +300,17 @@ export function apply(ctx: Context, config: Config = {}): void {
       throw new Error(`voice delegation "${task.id}" does not accept backend voice messages`)
     }
     if (task.cancelling) throw new Error(`voice delegation "${task.id}" is being cancelled`)
-    const message = { id: VoiceTaskMessageId(randomUUID()), text: input.message }
-    if (input.channel === 'COMPLETE') {
+    const type = input.type ?? (input.channel === 'COMPLETE' ? 'result' : 'progress')
+    const detail = input.detail ?? input.message
+    const voiceHint = input.voiceHint ?? input.message
+    const message = { id: VoiceTaskMessageId(randomUUID()), text: voiceHint }
+    if (type === 'result') {
       if (task.completionMessage !== undefined) {
         throw new Error(`voice delegation "${task.id}" already has a COMPLETE message`)
       }
       task.completionMessage = message
+      task.completionDetail = detail
+      task.waitingUser = false
       return { messageId: message.id, delivery: 'held_until_turn_end' }
     }
     if (task.completionMessage !== undefined) {
@@ -311,11 +318,15 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     append(binding, {
       taskId: task.id,
-      status: 'running',
+      status: type === 'question' ? 'waiting-user' : 'running',
       ...(task.taskTurn === undefined ? {} : { taskTurn: task.taskTurn }),
       channel: 'STATUS',
+      type,
+      detail,
+      voiceHint,
       voiceMessage: message,
-    }, false)
+    }, true)
+    if (type === 'question') task.waitingUser = true
     return { messageId: message.id, delivery: 'queued' }
   }
 
@@ -562,6 +573,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         messageIds: new Set([message.id]),
         agent,
         cancelling: false,
+        waitingUser: false,
       }
       binding.active = task
       taskBindings.set(task.taskSessionId, binding)
@@ -618,6 +630,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           agent: created.agent,
           ...(continuous ? {} : { disposeVoiceMessage: created.disposeVoiceMessage }),
           cancelling: false,
+          waitingUser: false,
         }
         binding.active = task
         taskBindings.set(created.taskSessionId, binding)
@@ -647,7 +660,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           return
         }
         complete({ kind: 'accepted', taskId: task.id })
-        append(binding, { taskId: task.id, status: 'accepted' }, false)
+        append(binding, { taskId: task.id, status: 'queued' }, false)
         return
       }
       case 'send_task_message': {
@@ -660,11 +673,21 @@ export function apply(ctx: Context, config: Config = {}): void {
           source: { kind: 'plugin', plugin: 'voice-assistant' },
         })
         task.messageIds.add(message.id)
-        try { task.agent.steer(message) } catch (error) { task.messageIds.delete(message.id); backendUnavailable(error); return }
+        const waitingForReply = task.waitingUser && task.taskTurn === undefined
+        task.waitingUser = false
+        try {
+          if (waitingForReply) task.agent.followup(message)
+          else task.agent.steer(message)
+        } catch (error) {
+          task.messageIds.delete(message.id)
+          task.waitingUser = waitingForReply
+          backendUnavailable(error)
+          return
+        }
         complete({ kind: 'accepted', taskId: task.id })
         append(binding, {
           taskId: task.id,
-          status: 'accepted',
+          status: 'queued',
           ...(task.taskTurn === undefined ? {} : { taskTurn: task.taskTurn }),
         }, false)
         return
@@ -675,6 +698,23 @@ export function apply(ctx: Context, config: Config = {}): void {
         const task = binding.active
         if (task === undefined) throw new Error('voice-assistant task state changed during command dispatch')
         task.cancelling = true
+        if (task.waitingUser && task.taskTurn === undefined) {
+          complete({ kind: 'accepted', taskId: task.id })
+          append(binding, {
+            taskId: task.id,
+            status: 'cancelled',
+            announcement: config.cancelledAnnouncement ?? '任务已取消。',
+          }, true)
+          const disposeVoiceMessage = task.disposeVoiceMessage
+          delete task.disposeVoiceMessage
+          binding.lastTerminalTaskId = task.id
+          binding.active = undefined
+          if ((config.taskSessionPolicy ?? 'isolated') === 'isolated') taskBindings.delete(task.taskSessionId)
+          try { disposeVoiceMessage?.() } catch (error: unknown) {
+            ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+          }
+          return
+        }
         try { task.agent.cancel({ kind: 'user' }) } catch (error) { task.cancelling = false; backendUnavailable(error); return }
         complete({ kind: 'accepted', taskId: task.id })
         return
@@ -789,7 +829,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     enqueue(binding, () => {
       const task = binding.active
       if (task === undefined || task.agent !== agent || !task.messageIds.has(message.id)) return
-      task.taskTurn ??= turn
+      task.taskTurn = turn
       append(binding, { taskId: task.id, status: 'running', taskTurn: turn }, false)
     })
   })
@@ -923,6 +963,11 @@ function observeSessionEvent(
   }
   if (event.type !== 'turn/end' || event.data.turn !== task.taskTurn) return false
   const status = terminalStatus(event.data.reason.kind)
+  if (status === 'completed' && task.waitingUser && task.completionMessage === undefined) {
+    delete task.taskTurn
+    delete task.lastAssistantMessage
+    return false
+  }
   const message = status === 'completed' && task.interactionMode === 'frontend-agent'
     ? task.completionMessage
     : undefined
@@ -938,7 +983,13 @@ function observeSessionEvent(
     taskId: task.id,
     status,
     taskTurn: task.taskTurn,
-    ...(message === undefined ? {} : { channel: 'COMPLETE' as const, voiceMessage: message }),
+    ...(message === undefined ? {} : {
+      channel: 'COMPLETE' as const,
+      type: 'result' as const,
+      detail: task.completionDetail ?? message.text,
+      voiceHint: message.text,
+      voiceMessage: message,
+    }),
     ...(announcement === undefined ? {} : { announcement }),
     ...(status === 'failed' ? { reason: event.data.reason.kind } : {}),
   }, task.interactionMode === 'frontend-agent' || announcement !== undefined)

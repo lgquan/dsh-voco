@@ -153,10 +153,16 @@ export interface VoiceTaskSessionBound {
 }
 
 /** Provider-independent task state appended by an Agent consumer. */
+export type VoiceTaskEventType = 'progress' | 'result' | 'warning' | 'error' | 'question'
+
+/** Provider-independent task state appended by an Agent consumer. */
 export interface TaskObservation {
   readonly taskId: VoiceTaskId
-  readonly status: 'accepted' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+  readonly status: 'accepted' | 'queued' | 'running' | 'waiting-user' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
   readonly taskTurn?: number
+  readonly type?: VoiceTaskEventType
+  readonly detail?: string
+  readonly voiceHint?: string
   readonly channel?: 'STATUS' | 'COMPLETE'
   readonly voiceMessage?: VoiceTaskMessage
   readonly announcement?: string
