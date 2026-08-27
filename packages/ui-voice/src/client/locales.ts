@@ -36,6 +36,7 @@ export const zh = {
   'task.status.interrupted': '服务中断',
   'task.expand': '展开摘要',
   'task.collapse': '收起摘要',
+  'task.cancel': '取消任务',
   'task.open': '打开任务',
 } satisfies Record<string, string>
 
@@ -75,5 +76,6 @@ export const en = {
   'task.status.interrupted': 'Interrupted',
   'task.expand': 'Show summary',
   'task.collapse': 'Hide summary',
+  'task.cancel': 'Cancel task',
   'task.open': 'Open task',
 } satisfies Record<VoiceKey, string>

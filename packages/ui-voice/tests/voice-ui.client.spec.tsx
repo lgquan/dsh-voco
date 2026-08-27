@@ -283,6 +283,7 @@ describe('Voice UI surfaces', () => {
 
   it('enables delegated-task navigation only after the target Session is listed', () => {
     const openSession = vi.fn()
+    const cancelTask = vi.fn()
     const node = {
       key: 'voice-delegation:task-1', kind: 'voice-delegation', id: 'task-1', target: 'chat',
       anchorSeq: 1, location: { kind: 'unresolved' }, visibility: 'visible',
@@ -293,6 +294,10 @@ describe('Voice UI surfaces', () => {
     } as VoiceDelegationViewProps['node']
     const absent = {
       ...runtimeProps(), node, openSession,
+      cancelTask,
+      useVoice: (selector: (snapshot: VoiceClientSnapshot) => unknown) => selector(voiceSnapshot({
+        state: 'listening', sessionId: VOICE_SESSION,
+      })),
       useSessions: (selector: (state: SessionListState) => unknown) => selector(listState()),
     } as unknown as VoiceDelegationViewProps
     const view = render(<VoiceDelegationView {...absent} />)
@@ -303,6 +308,8 @@ describe('Voice UI surfaces', () => {
     expect(screen.getByText('正在执行')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '收起摘要' }))
     expect(screen.queryByText('正在执行')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '取消任务' }))
+    expect(cancelTask).toHaveBeenCalledWith('task-1')
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '打开任务' }).disabled).toBe(true)
     view.rerender(<VoiceDelegationView {...absent} useSessions={selector => selector(listState([
       VOICE_SESSION, TASK_SESSION,

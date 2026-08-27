@@ -53,7 +53,9 @@ export function apply(ctx: ClientContext): void {
   })
   const utteranceInjected = (): VoiceUtteranceInjected => ({ hooks: { voice: controller } })
   const delegationInjected = (): VoiceDelegationInjected => ({
+    hooks: { voice: controller },
     openSession: (id) => { ctx.sessions.open(id) },
+    cancelTask: (id) => { controller.cancelTask(id) },
   })
   const historyInjected = (): VoiceHistoryActionInjected => ({
     hooks: { voice: controller, voiceHistory: history.snapshot },

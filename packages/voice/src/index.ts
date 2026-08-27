@@ -262,6 +262,11 @@ export class VoiceRuntime extends Service {
     record.result = result
   }
 
+  /** Submit one validated command from a non-provider frontend control. */
+  submitTaskCommand(id: VoiceSessionId, call: TaskCommandCall): void {
+    this.acceptTaskCommand(this.requireAttachedSession(id), call)
+  }
+
   /**
    * Detach the browser while retaining the provider conversation for bounded reconnection.
    * @param id - voice session.
@@ -323,29 +328,33 @@ export class VoiceRuntime extends Service {
       this.publish(live, event)
       return
     }
-    const fingerprint = commandFingerprint(event.call)
-    const existing = live.commands.get(event.call.id)
+    this.acceptTaskCommand(live, event.call)
+  }
+
+  private acceptTaskCommand(live: LiveSession, call: TaskCommandCall): void {
+    const fingerprint = commandFingerprint(call)
+    const existing = live.commands.get(call.id)
     if (existing === undefined) {
       if (live.commands.size >= this.maxCommandCalls) {
-        live.provider.completeTaskCommand(event.call.id, {
+        live.provider.completeTaskCommand(call.id, {
           kind: 'rejected',
           code: 'capacity_exceeded',
           message: `voice session already tracks ${String(this.maxCommandCalls)} command calls`,
         })
         return
       }
-      live.commands.set(event.call.id, { fingerprint })
-      this.publish(live, event)
+      live.commands.set(call.id, { fingerprint })
+      this.publish(live, { type: 'task.command', call })
       return
     }
     if (existing.fingerprint !== fingerprint) {
       this.publish(live, {
         type: 'error',
-        message: `voice command call "${event.call.id}" was reused with different arguments`,
+        message: `voice command call "${call.id}" was reused with different arguments`,
       })
       return
     }
-    if (existing.result !== undefined) live.provider.completeTaskCommand(event.call.id, existing.result)
+    if (existing.result !== undefined) live.provider.completeTaskCommand(call.id, existing.result)
   }
 
   private requireSession(id: VoiceSessionId): LiveSession {

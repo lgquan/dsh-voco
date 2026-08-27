@@ -186,6 +186,15 @@ describe('VoiceController', () => {
     await controller.stop()
   })
 
+  it('sends exact task cancellation through the active transport', async () => {
+    const controller = new VoiceController()
+    const socket = await start(controller)
+    controller.cancelTask('task-42')
+    expect(socket.sent).toContain(JSON.stringify({ type: 'task.cancel', taskId: 'task-42' }))
+    await controller.stop()
+    expect(() => { controller.cancelTask('task-42') }).toThrow('requires an active connection')
+  })
+
   it('rejects malformed, unsupported, and provider-error ready payloads before microphone access', async () => {
     const invalid: Array<readonly [unknown, string]> = [
       [null, 'expected a ready event'],

@@ -17,6 +17,7 @@ export interface VoiceClientSnapshot {
 
 interface VoiceTransport {
   close(): Promise<void>
+  cancelTask(taskId: string): void
 }
 
 interface VoiceTransportHandlers {
@@ -107,6 +108,13 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
     const sessionId = this.snapshot.sessionId
     if (sessionId === undefined) throw new Error('voice retry requires an active session')
     await this.start(sessionId)
+  }
+
+  /** Cancel the exact active background task through the attached Voice transport. */
+  cancelTask(taskId: string): void {
+    if (taskId === '') throw new Error('voice task id is required')
+    if (this.transport === undefined) throw new Error('voice task cancellation requires an active connection')
+    this.transport.cancelTask(taskId)
   }
 
   /** Stop capture/playback and await owned browser-resource teardown. */
@@ -267,6 +275,10 @@ async function openVoiceTransport(
   const playing = new Set<AudioBufferSourceNode>()
 
   const transport: VoiceTransport = {
+    cancelTask: (taskId) => {
+      if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
+      socket.send(JSON.stringify({ type: 'task.cancel', taskId }))
+    },
     close: async () => {
       /* v8 ignore next -- controller ownership closes a transport once; the guard protects browser close races. */
       if (stopped) return

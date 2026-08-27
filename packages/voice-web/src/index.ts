@@ -1,10 +1,11 @@
 /** Dedicated browser WebSocket carrier for realtime voice audio and events. @module @lgquan/dsh-voice-web */
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { VoiceEvent } from '@lgquan/dsh-voice'
+import { VoiceCommandCallId, VoiceTaskId, type VoiceEvent } from '@lgquan/dsh-voice'
 import WebSocket, { WebSocketServer } from 'ws'
 
 export const name = 'voice-web'
@@ -104,6 +105,18 @@ async function attach(ctx: Context, socket: WebSocket, rawUrl: string): Promise<
       if (type === 'audio.commit') voice.commitAudio(session.id)
       else if (type === 'response.interrupt') voice.interruptResponse(session.id)
       else if (type === 'playback.ended') voice.playbackEnded(session.id)
+      else if (type === 'task.cancel') {
+        const taskId = (control as Record<string, unknown>).taskId
+        if (typeof taskId !== 'string' || taskId === '') {
+          state.finalClose = true
+          socket.close(1008, 'taskId is required')
+          return
+        }
+        voice.submitTaskCommand(session.id, {
+          id: VoiceCommandCallId(`browser:${randomUUID()}`),
+          command: { type: 'cancel_task', taskId: VoiceTaskId(taskId) },
+        })
+      }
       else if (type === 'session.close') {
         state.finalClose = true
         unsubscribe?.()

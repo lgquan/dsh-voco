@@ -153,16 +153,25 @@ describe('voice WebSocket carrier', () => {
     const loaded = await loadCarrier()
     const { socket } = await openVoice(loaded.url)
     const connection = loaded.connections[0] as ProviderConnection
+    const commands: VoiceProviderEvent[] = []
+    ;(context as Context).on('voice/session-event', (_session, event) => {
+      if (event.type === 'task.command') commands.push(event)
+    })
 
     socket.send(Buffer.from([1, 2, 3]), { binary: true })
     socket.send(JSON.stringify({ type: 'audio.commit' }))
     socket.send(JSON.stringify({ type: 'response.interrupt' }))
     socket.send(JSON.stringify({ type: 'playback.ended' }))
+    socket.send(JSON.stringify({ type: 'task.cancel', taskId: 'task-from-browser' }))
     await vi.waitFor(() => {
       expect(connection.spies.appendAudio).toHaveBeenCalledWith(Buffer.from([1, 2, 3]))
       expect(connection.spies.commitAudio).toHaveBeenCalledOnce()
       expect(connection.spies.interruptResponse).toHaveBeenCalledOnce()
       expect(connection.spies.playbackEnded).toHaveBeenCalledOnce()
+      expect(commands).toEqual([expect.objectContaining({
+        type: 'task.command',
+        call: expect.objectContaining({ command: { type: 'cancel_task', taskId: 'task-from-browser' } }),
+      })])
     })
 
     const transcription = readJson(socket)

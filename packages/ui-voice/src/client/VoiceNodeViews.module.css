@@ -148,3 +148,4 @@
 
 .taskLink:hover:not(:disabled) { text-decoration: underline; text-underline-position: from-font; }
 .taskLink:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
+.taskCancel { color: var(--dsw-alias-state-error-primary); }

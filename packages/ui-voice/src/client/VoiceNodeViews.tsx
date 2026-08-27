@@ -15,7 +15,11 @@ export interface VoiceUtteranceInjected {
 
 /** Navigation action injected into the task-card renderer. */
 export interface VoiceDelegationInjected {
+  hooks: {
+    voice: { getSnapshot(): VoiceClientSnapshot; subscribe(listener: () => void): () => void }
+  }
   readonly openSession: (id: SessionId) => void
+  readonly cancelTask: (id: string) => void
 }
 
 export type VoiceUtteranceViewProps =
@@ -24,7 +28,7 @@ export type VoiceUtteranceViewProps =
   & PropsLocale<'voice'>
 export type VoiceDelegationViewProps =
   PropsRuntime<'conversation.chat.node', 'voice-delegation'>
-  & VoiceDelegationInjected
+  & InjectFace<VoiceDelegationInjected>
   & PropsLocale<'voice'>
 
 /** Render a durable Voice utterance while replacing its unsettled text with live WebSocket deltas. */
@@ -66,9 +70,11 @@ const STATUS_KEYS: Record<VoiceDelegationChatData['status'], VoiceKey> = {
 }
 
 /** Render the minimum one-way link from a Voice Session to its independent DSH task. */
-export function VoiceDelegationView({ node, useSessions, openSession, t }: VoiceDelegationViewProps) {
+export function VoiceDelegationView({ node, sessionId, useSessions, useVoice, openSession, cancelTask, t }: VoiceDelegationViewProps) {
   const [expanded, setExpanded] = useState(false)
   const navigable = useSessions(sessions => sessions.ids.includes(node.data.taskSessionId))
+  const connected = useVoice(voice => voice.sessionId === sessionId && voice.state !== 'off' && voice.state !== 'error')
+  const cancellable = connected && !isTerminalTaskStatus(node.data.status)
   return (
     <article className={css.taskCard} data-voice-delegation data-status={node.data.status}>
       <header className={css.taskHeader}>
@@ -86,6 +92,11 @@ export function VoiceDelegationView({ node, useSessions, openSession, t }: Voice
         <button type="button" className={css.taskLink} onClick={() => { setExpanded(value => !value) }}>
           {expanded ? t('task.collapse') : t('task.expand')}
         </button>
+        {cancellable && (
+          <button type="button" className={`${css.taskLink} ${css.taskCancel}`} onClick={() => { cancelTask(String(node.data.taskId)) }}>
+            {t('task.cancel')}
+          </button>
+        )}
         <button
           type="button"
           className={css.taskLink}
@@ -97,4 +108,8 @@ export function VoiceDelegationView({ node, useSessions, openSession, t }: Voice
       </div>
     </article>
   )
+}
+
+function isTerminalTaskStatus(status: VoiceDelegationChatData['status']): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'interrupted'
 }

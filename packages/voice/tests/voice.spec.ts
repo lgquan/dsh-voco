@@ -504,6 +504,25 @@ describe('voice runtime', () => {
     }).toThrow('is not pending')
   })
 
+  it('admits an attached browser task command through the same command boundary', async () => {
+    const ctx = new Context()
+    await ctx.plugin(VoiceRuntime, { provider: 'test' })
+    const connected = providerSession()
+    ctx.voice.registerProvider({
+      id: 'test', available: () => true, connect: () => Promise.resolve(connected.session),
+    })
+    const opened = await ctx.voice.open(SessionId('browser-command-source'))
+    const events: unknown[] = []
+    ctx.voice.subscribe(opened.id, event => { events.push(event) })
+    const call = {
+      id: VoiceCommandCallId('browser-cancel'),
+      command: { type: 'cancel_task' as const, taskId: VoiceTaskId('task-1') },
+    }
+
+    ctx.voice.submitTaskCommand(opened.id, call)
+    expect(events).toEqual([{ type: 'task.command', call }])
+  })
+
   it('rejects call-id reuse with changed arguments and fingerprints every command kind', async () => {
     const ctx = new Context()
     await ctx.plugin(VoiceRuntime, { provider: 'test' })
