@@ -53,7 +53,7 @@ describe('LocalSession', () => {
     expect(backend.interrupt).toHaveBeenCalledTimes(1)
   })
 
-  it('turns completed ASR into one background delegation in frontend-agent mode', async () => {
+  it('routes completed ASR before starting a background delegation in frontend-agent mode', async () => {
     const backend = new MemoryBackend()
     const events: unknown[] = []
     const session = new LocalSession(
@@ -69,7 +69,7 @@ describe('LocalSession', () => {
     expect(events).toEqual(expect.arrayContaining([{
       type: 'task.command',
       call: expect.objectContaining({
-        command: { type: 'realtime_delegation', input: '检查项目状态' },
+        command: { type: 'route_transcription', input: '检查项目状态' },
       }),
     }]))
     expect(events.filter(event => (event as { type?: string }).type === 'task.command')).toHaveLength(1)
@@ -78,7 +78,12 @@ describe('LocalSession', () => {
     const firstCommand = events.find(event => (event as { type?: string }).type === 'task.command') as {
       call: { id: never }
     }
-    session.completeTaskCommand(firstCommand.call.id, { kind: 'accepted', taskId: VoiceTaskId('task-fixed') })
+    session.completeTaskCommand(firstCommand.call.id, { kind: 'handled' })
+    backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-task', text: '修改项目文件' })
+    const taskCommand = events.findLast(event => (
+      (event as { type?: string }).type === 'task.command'
+    )) as { call: { id: never } }
+    session.completeTaskCommand(taskCommand.call.id, { kind: 'accepted', taskId: VoiceTaskId('task-fixed') })
     backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-4', text: '再检查测试' })
     expect(events.at(-1)).toMatchObject({
       type: 'task.command',
@@ -89,7 +94,7 @@ describe('LocalSession', () => {
     backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-5', text: '开始下一项' })
     expect(events.at(-1)).toMatchObject({
       type: 'task.command',
-      call: { command: { type: 'realtime_delegation', input: '开始下一项' } },
+      call: { command: { type: 'route_transcription', input: '开始下一项' } },
     })
   })
 
@@ -113,11 +118,15 @@ describe('LocalSession', () => {
     expect(backend.synthesize).toHaveBeenCalledWith(expect.any(String), '第一句完成。第二句请确认。')
 
     session.appendSpeechText('独立模型重写后的第一句。')
+    session.appendSpeechText('这是同一条回复的第二句。')
     session.requestResponse({ kind: 'automatic' })
     expect(events.findLast(event => (event as { type?: string }).type === 'output_text.delta')).toMatchObject({
       type: 'output_text.delta',
-      text: '独立模型重写后的第一句。',
+      text: '独立模型重写后的第一句。\n这是同一条回复的第二句。',
     })
-    expect(backend.synthesize).toHaveBeenLastCalledWith(expect.any(String), '独立模型重写后的第一句。')
+    expect(backend.synthesize).toHaveBeenLastCalledWith(
+      expect.any(String),
+      '独立模型重写后的第一句。\n这是同一条回复的第二句。',
+    )
   })
 })

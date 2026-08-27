@@ -387,6 +387,7 @@ export default VoiceRuntime
 function commandFingerprint(call: TaskCommandCall): string {
   const command = call.command
   switch (command.type) {
+    case 'route_transcription': return JSON.stringify([command.type, command.input])
     case 'realtime_delegation': return JSON.stringify([command.type, command.input, command.transcriptDelta])
     case 'send_task_message': return JSON.stringify([command.type, command.taskId, command.message])
     case 'cancel_task': return JSON.stringify([command.type, command.taskId])

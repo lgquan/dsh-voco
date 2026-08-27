@@ -91,7 +91,8 @@ export class LocalSession implements VoiceProviderSession {
     const command = this.pendingCommands.get(callId)
     if (command === undefined) return
     this.pendingCommands.delete(callId)
-    if (result.kind === 'accepted' && command.type === 'realtime_delegation') {
+    if (result.kind === 'accepted'
+      && (command.type === 'route_transcription' || command.type === 'realtime_delegation')) {
       this.activeTaskId = result.taskId
     } else if (result.kind === 'rejected' && command.type === 'send_task_message'
       && (result.code === 'task_not_active' || result.code === 'task_not_found')) {
@@ -116,7 +117,7 @@ export class LocalSession implements VoiceProviderSession {
         if (this.interactionMode === 'frontend-agent' && event.text.trim() !== '') {
           const text = event.text.trim()
           this.emitTaskCommand(this.activeTaskId === undefined
-            ? { type: 'realtime_delegation', input: text }
+            ? { type: 'route_transcription', input: text }
             : { type: 'send_task_message', taskId: this.activeTaskId, message: text })
         }
         return

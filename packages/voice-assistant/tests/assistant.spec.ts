@@ -158,6 +158,17 @@ describe('voice assistant driver', () => {
       async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
         requests.push(options)
         const prompt = options.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+        if (prompt?.includes('判断下面这句话应该由语音助手直接回答') === true) {
+          yield {
+            type: 'text-delta',
+            index: 0,
+            text: prompt.includes('请创建免费.md')
+              ? '{"action":"delegate"}'
+              : '{"action":"chat","reply":"你好，我在呢。"}',
+          }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+          return
+        }
         if (prompt?.includes('Agent 事件类型：progress') === true) {
           yield { type: 'text-delta', index: 0, text: '正在检查文件内容。' }
           yield { type: 'finish', reason: { kind: 'stop' } }
@@ -178,6 +189,7 @@ describe('voice assistant driver', () => {
     const observations: TaskObservation[] = []
     const displayed: string[] = []
     const ttsInputs: string[] = []
+    const commandResults: TaskCommandResult[] = []
     let pendingSpeech = ''
     let emit: ((event: VoiceProviderEvent) => void) | undefined
     const providerSession: VoiceProviderSession = {
@@ -192,7 +204,7 @@ describe('voice assistant driver', () => {
         ttsInputs.push(pendingSpeech)
         pendingSpeech = ''
       },
-      completeTaskCommand: () => {},
+      completeTaskCommand: (_callId, result) => { commandResults.push(result) },
       close: () => Promise.resolve(),
     }
     ctx.voice.registerProvider({
@@ -220,8 +232,19 @@ describe('voice assistant driver', () => {
     emit?.({
       type: 'task.command',
       call: {
+        id: VoiceCommandCallId('route-chat'),
+        command: { type: 'route_transcription', input: '你好' },
+      },
+    })
+    await vi.waitFor(() => { expect(displayed).toEqual(['你好，我在呢。']) })
+    expect(commandResults).toContainEqual({ kind: 'handled' })
+    expect(createdAgents).toHaveLength(0)
+
+    emit?.({
+      type: 'task.command',
+      call: {
         id: VoiceCommandCallId('rewrite-start'),
-        command: { type: 'realtime_delegation', input: '请创建免费.md，并告诉我结果' },
+        command: { type: 'route_transcription', input: '请创建免费.md，并告诉我结果' },
       },
     })
     await settle()
@@ -255,7 +278,7 @@ describe('voice assistant driver', () => {
       agent: task.agent,
     })
     expect(progress).toMatchObject({ isError: false, value: { delivery: 'queued' } })
-    await vi.waitFor(() => { expect(displayed).toEqual(['正在检查文件内容。']) })
+    await vi.waitFor(() => { expect(displayed).toEqual(['你好，我在呢。', '正在检查文件内容。']) })
 
     const complete = await ctx.tools.execute({
       signal: new AbortController().signal,
@@ -273,9 +296,9 @@ describe('voice assistant driver', () => {
 
     await vi.waitFor(() => {
       expect(displayed).toEqual([
+        '你好，我在呢。',
         '正在检查文件内容。',
-        '已经创建了名为免费的 Markdown 文档。',
-        '文件内容也已经检查完成。',
+        '已经创建了名为免费的 Markdown 文档。文件内容也已经检查完成。',
       ])
     })
     expect(ttsInputs).toEqual(displayed)

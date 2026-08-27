@@ -9,9 +9,9 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 ## Interaction
 
 - **Real-time voice conversation**: browser audio uses local Silero VAD and streaming Paraformer ONNX, while replies use Edge TTS's Chinese Xiaoxiao voice with interruption support.
-- **Conversational delegation**: the frontend exposes exactly three orchestration tools — `realtime_delegation` (turn "check this for me" into a real background task), `send_task_message` (add or correct requirements), and `cancel_task`.
+- **On-demand delegation**: after local ASR, a lightweight frontend model routes the intent. Greetings and questions requiring no tools are answered directly; only workspace inspection or modification, commands, and similar work enter the fixed background Agent through `realtime_delegation`.
 - **Continuous task context**: sequential delegations reuse one background Agent Session while retaining distinct delegation ids.
-- **Independent conversational results**: the background Agent reports `progress | result | warning | error | question` events with complete facts in the sole `detail` content field. The Voice layer rewrites detail against the original request and streams complete sentences to both the UI and TTS. Agent-authored speech text is not accepted, and final replies have no fixed short-response cap.
+- **Independent conversational results**: the background Agent reports `progress | result | warning | error | question` events with complete facts in the sole `detail` field. The Voice layer rewrites detail against the original request and submits the coherent reply as one UI message and one TTS response. Edge TTS may synthesize sentences internally without creating separate chat bubbles.
 - **Recoverable two-session memory**: restarting voice or DSH restores recent source-Session conversation and its fixed background Agent Session binding. An interrupted task reports its last spoken progress but is never replayed automatically.
 - **Uninterrupted flow**: switching browser tabs or reconnecting never stops the live voice session or the task behind it.
 

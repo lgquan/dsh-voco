@@ -2,13 +2,13 @@
 
 [English](README.md) | 中文
 
-把一个已连接语音传输绑定到当前持久 Session 的 consumer。在 `speech-shell` 模式下，没有活跃语音任务时，完整转写进入该 Session 的 `followup`；任务运行中则进入 `steer`。在 `frontend-agent` 模式下，转写留在 provider 对话内，只有通过验证的 `TaskCommandCall` 事件会创建或控制文本 Task Agent。
+把一个已连接语音传输绑定到当前持久 Session 的 consumer。在 `speech-shell` 模式下，没有活跃语音任务时，完整转写进入该 Session 的 `followup`；任务运行中则进入 `steer`。在 `frontend-agent` 模式下，`route_transcription` 会把最近的持久语音对话和当前转写交给所选前台模型。普通对话直接回答；需要工具的工作才转换成已验证的后台委派。任务活跃期间，后续转写会更新同一个任务。
 
 `realtime_delegation` 分配权威 `VoiceTaskId`、确保后台 Task Session 存在，再在线路上以 `delegation_id` 返回该 id。随附 profile 使用 `continuous` 策略：一个来源 Voice Session 创建或恢复一个固定的普通 Task Agent Session；兼容的 `isolated` 策略才会为每次委派新建 Session。Task Agent 继承 Voice Session 的 workspace、工作目录、preset 组合、provider 与 model。它收到的任务消息是 `<realtime_delegation>` 信封，包含 id、自包含输入与可选转写增量；Voice Session 记录带目标 `SessionId` 的 `voice/task-delegated` 供界面跳转。`send_task_message` 通过该 Task Agent 的 `steer` 发送带准确 id 的 `<realtime_delegation_update>`，`cancel_task` 调用该 Agent 的 `cancel({kind:'user'})`。未知、已终止或正在取消的 id 会返回类型化拒绝且不修改 Agent；重复 provider call id 在这个 consumer 运行前由 `dsh-voice` 抑制。
 
-插件只在活跃 Task Agent 的作用域内安装 `send_voice_message` 及其指引。桥接层已经创建准确目标，因此后台工具不提供 project 列举或选择。Agent 用 `progress | result | warning | error | question` 和唯一的完整事实字段 `detail` 发出结构化事件；工具不接受 Agent 直接编写的播报字段。阶段事件可在确有意义时重复，最终 `result` 只能接纳一次并保留到权威 turn 成功。对每个回报事件，语音层都会把用户原始请求（含已接受的补充要求）、事件类型和完整细节交给独立模型重写。阶段说明保持简洁，最终回复长度随请求自适应且没有固定短回复上限，并按完整句把同一文本流送入语音窗口和 TTS。`question` 把任务置为 `waiting-user`，用户回复后在同一个 Task Agent Session 中开启下一 turn。失败或取消会丢弃已缓冲的 result；成功 turn 没有 result 时会改写最后一条 assistant 文本。缺少重写能力时使用安全的直接回退，完全没有可用输出时才使用 `completedAnnouncement`。
+插件只在活跃 Task Agent 的作用域内安装 `send_voice_message` 及其指引。桥接层已经创建准确目标，因此后台工具不提供 project 列举或选择。Agent 用 `progress | result | warning | error | question` 和唯一的完整事实字段 `detail` 发出结构化事件；工具不接受 Agent 直接编写的播报字段。阶段事件可在确有意义时重复，最终 `result` 只能接纳一次并保留到权威 turn 成功。对每个回报事件，语音层都会把用户原始请求（含已接受的补充要求）、事件类型和完整细节交给独立模型重写。阶段说明保持简洁，最终回复长度随请求自适应且没有固定短回复上限。每个重写事件只生成一条完整页面消息和一次 TTS 响应；Edge TTS 内部仍可按句合成，但不会显示成多个气泡。`question` 把任务置为 `waiting-user`，用户回复后在同一个 Task Agent Session 中开启下一 turn。失败或取消会丢弃已缓冲的 result；成功 turn 没有 result 时会改写最后一条 assistant 文本。缺少重写能力时使用安全的直接回退，完全没有可用输出时才使用 `completedAnnouncement`。
 
-带标识的任务消息通过 `agent/inbox/claimed` 精确关联 turn，对应的持久 `turn/end` 是任务终止点。每条 `TaskObservation` 都先以 `voice/task-observation` 追加到来源 Session，再交付 provider。Provider 的 ASR 与输出文本生命周期成为持久 utterance start/end 事件；delta 只保留为浏览器实时状态。Provider 的外部文本投影使播报文本进入同一份持久 assistant 历史，并且只在浏览器播放完成后标记为 completed。这些插件拥有的记录按“读取时必需”处理：插件在加载时把这些类型注册进 `KNOWN_SESSION_EVENT_TYPES`，因为 DSH 核心暂时没有可跳过的未知插件事件注册面。Speech-shell 模式为 assistant 输出请求外部文本语音；frontend-agent 模式即时播报可选的阶段提示，并独立重写最终结果。终止映射为：`completed` → completed、`aborted` → cancelled，其余结束原因 → failed。语音断连只解除传输，在任务活跃期间保留 Task Agent 与作用域回报工具，继续完成已验证的 provider command，并为同一进程内的重连有界排队 observation。服务关闭时会把活跃任务持久标记为 `interrupted`；恢复时告知最后一次已播报进度，但绝不自动重放任务。
+带标识的任务消息通过 `agent/inbox/claimed` 精确关联 turn，对应的持久 `turn/end` 是任务终止点。每条 `TaskObservation` 都先以 `voice/task-observation` 追加到来源 Session，再交付 provider。Provider 的 ASR 与输出文本生命周期成为持久 utterance start/end 事件；delta 只保留为浏览器实时状态。Provider 的外部文本投影使播报文本进入同一份持久 assistant 历史，并且只在浏览器播放完成后标记为 completed。这些插件拥有的记录按“读取时必需”处理：插件在加载时把这些类型注册进 `KNOWN_SESSION_EVENT_TYPES`，因为 DSH 核心暂时没有可跳过的未知插件事件注册面。Speech-shell 模式为 assistant 输出请求外部文本语音；frontend-agent 模式独立重写已报告的阶段事件和最终结果。终止映射为：`completed` → completed、`aborted` → cancelled，其余结束原因 → failed。语音断连只解除传输，在任务活跃期间保留 Task Agent 与作用域回报工具，继续完成已验证的 provider command，并为同一进程内的重连有界排队 observation。服务关闭时会把活跃任务持久标记为 `interrupted`；恢复时告知最后一次已播报进度，但绝不自动重放任务。
 
 ## 模型体验
 
@@ -20,7 +20,7 @@ Speech-shell 转写作为人工消息进入 Voice Session Agent。Frontend-agent
 
 #### Token 影响
 
-委派信封、普通任务执行与 `send_voice_message` 调用消耗任务模型 token。最终结果的独立口语化重写会额外调用一次当前默认模型；前台直接对话和本地 ASR/TTS 不进入任务模型请求。
+每个新的前台话语会进行一次轻量路由调用；普通对话在这一次调用内直接完成，不创建后台 Agent 任务。委派工作还会消耗任务执行 token，并为每个已报告事件增加一次辅助改写调用。本地 ASR/TTS 不消耗模型 token。
 
 #### KV Cache 影响
 

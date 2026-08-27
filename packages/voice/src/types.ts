@@ -99,6 +99,7 @@ export type VoiceResponsePolicy = { readonly kind: 'automatic' }
 
 /** User intent extracted by the voice provider. */
 export type TaskCommand =
+  | { readonly type: 'route_transcription'; readonly input: string }
   | { readonly type: 'realtime_delegation'; readonly input: string; readonly transcriptDelta?: string }
   | { readonly type: 'send_task_message'; readonly taskId: VoiceTaskId; readonly message: string }
   | { readonly type: 'cancel_task'; readonly taskId: VoiceTaskId }
@@ -112,6 +113,7 @@ export interface TaskCommandCall {
 /** Typed completion returned to the frontend Agent for one orchestration call. */
 export type TaskCommandResult =
   | { readonly kind: 'accepted'; readonly taskId: VoiceTaskId }
+  | { readonly kind: 'handled' }
   | {
     readonly kind: 'rejected'
     readonly code: 'invalid_command' | 'task_active' | 'task_not_found' | 'task_not_active' | 'backend_unavailable' | 'capacity_exceeded'

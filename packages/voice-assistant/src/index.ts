@@ -277,8 +277,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       original,
     ].join('\n')
     const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'plugin', plugin: 'voice-assistant' } })
-    let buffer = ''
-    let emitted = false
+    let rewritten = ''
     try {
       for await (const chunk of llm.stream({
         provider: selection.provider,
@@ -290,21 +289,10 @@ export function apply(ctx: Context, config: Config = {}): void {
       })) {
         if (generation !== binding.rewriteGeneration || abort.signal.aborted) return
         if (chunk.type !== 'text-delta') continue
-        buffer += chunk.text
-        const split = speechFragments(buffer, false)
-        buffer = split.rest
-        for (const fragment of split.fragments) {
-          emitted = true
-          speakFragment(binding, taskId, fragment)
-        }
+        rewritten += chunk.text
       }
-      const final = speechFragments(buffer, true)
-      if (final.rest.trim() !== '') final.fragments.push(final.rest.trim())
-      for (const fragment of final.fragments) {
-        emitted = true
-        speakFragment(binding, taskId, fragment)
-      }
-      if (!emitted) speakFragment(binding, taskId, fallbackEventSpeech(eventType, original))
+      const speech = rewritten.trim() || fallbackEventSpeech(eventType, original)
+      speakFragment(binding, taskId, speech)
     } catch (error: unknown) {
       if (!abort.signal.aborted && generation === binding.rewriteGeneration) {
         ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
@@ -667,6 +655,32 @@ export function apply(ctx: Context, config: Config = {}): void {
       complete({ kind: 'rejected', code: 'backend_unavailable', message: error instanceof Error ? error.message : String(error) })
     }
     switch (call.command.type) {
+      case 'route_transcription': {
+        if (binding.active !== undefined) {
+          await onTaskCommand(binding, voiceSessionId, {
+            id: call.id,
+            command: { type: 'send_task_message', taskId: binding.active.id, message: call.command.input },
+          })
+          return
+        }
+        let route: FrontendRoute
+        try {
+          route = await routeFrontendInput(ctx, requireSourceSession(binding).events, call.command.input)
+        } catch (error: unknown) {
+          ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+          route = { action: 'delegate' }
+        }
+        if (route.action === 'delegate') {
+          await onTaskCommand(binding, voiceSessionId, {
+            id: call.id,
+            command: { type: 'realtime_delegation', input: call.command.input },
+          })
+          return
+        }
+        complete({ kind: 'handled' })
+        speakFragment(binding, VoiceTaskId(randomUUID()), route.reply)
+        return
+      }
       case 'realtime_delegation': {
         if (binding.active !== undefined) {
           complete({ kind: 'rejected', code: 'task_active', message: `task "${binding.active.id}" is still active` })
@@ -992,24 +1006,57 @@ function isTerminalObservation(observation: TaskObservation): boolean {
     || observation.status === 'interrupted'
 }
 
-function speechFragments(text: string, flush: boolean): { fragments: string[]; rest: string } {
-  const fragments: string[] = []
-  let rest = text
-  while (true) {
-    const match = /[。！？!?；;]/u.exec(rest)
-    if (match === null || match.index === undefined) break
-    const end = match.index + match[0].length
-    fragments.push(rest.slice(0, end).trim())
-    rest = rest.slice(end)
+type FrontendRoute =
+  | { readonly action: 'chat'; readonly reply: string }
+  | { readonly action: 'delegate' }
+
+async function routeFrontendInput(ctx: Context, events: readonly SessionEvent[], input: string): Promise<FrontendRoute> {
+  let llm: LlmRuntime | undefined
+  try { llm = ctx.get('llm') as LlmRuntime | undefined } catch { llm = undefined }
+  if (llm === undefined) return { action: 'delegate' }
+  const selection = ctx.agentDefaultModel.currentSelection()
+  const recentConversation = events.flatMap(event => {
+    if (event.type !== 'voice/utterance-end' || event.data.state !== 'completed') return []
+    const text = event.data.text.trim()
+    return text === '' ? [] : [`${event.data.role === 'user' ? '用户' : '助手'}：${text}`]
+  }).slice(-12).join('\n')
+  const message = createUserMessage({
+    content: [{
+      type: 'text',
+      text: [
+        '判断下面这句话应该由语音助手直接回答，还是委派给后台编码 Agent。',
+        '普通寒暄、日常对话、无需读取本地项目或调用工具即可回答的问题，选择 chat，并直接给出自然简洁的中文回复。',
+        '只有需要查看或修改工作区文件、运行命令、测试、安装依赖或执行其他工具操作时，才选择 delegate。',
+        '只输出一行 JSON，不要 Markdown。格式只能是：',
+        '{"action":"chat","reply":"..."}',
+        '或：',
+        '{"action":"delegate"}',
+        '',
+        '最近对话：',
+        recentConversation || '（无）',
+        '',
+        `用户原话：${input}`,
+      ].join('\n'),
+    }],
+    source: { kind: 'plugin', plugin: 'voice-assistant' },
+  })
+  let output = ''
+  for await (const chunk of llm.stream({
+    provider: selection.provider,
+    model: selection.model,
+    ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+    messages: [message],
+    system: '你是语音前台路由器。严格按要求输出一个 JSON 对象。不要把普通对话委派给后台编码 Agent。',
+  })) {
+    if (chunk.type === 'text-delta') output += chunk.text
   }
-  if (!flush && rest.length >= 36) {
-    const comma = Math.max(rest.lastIndexOf('，', 36), rest.lastIndexOf(',', 36))
-    if (comma >= 12) {
-      fragments.push(rest.slice(0, comma + 1).trim())
-      rest = rest.slice(comma + 1)
-    }
+  const normalized = output.trim().replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '')
+  const parsed = JSON.parse(normalized) as Record<string, unknown>
+  if (parsed.action === 'chat' && typeof parsed.reply === 'string' && parsed.reply.trim() !== '') {
+    return { action: 'chat', reply: parsed.reply.trim() }
   }
-  return { fragments: fragments.filter(Boolean), rest }
+  if (parsed.action === 'delegate') return { action: 'delegate' }
+  throw new Error('voice frontend router returned an invalid decision')
 }
 
 function fallbackSpeechText(text: string): string {
