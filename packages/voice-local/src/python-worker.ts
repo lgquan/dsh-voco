@@ -1,7 +1,7 @@
 import { createInterface } from 'node:readline'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { Buffer } from 'node:buffer'
-import { resolve } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import type { VoiceAudioProfile } from '@wayneyu430227/dsh-voice'
 import type { SpeechBackend, SpeechBackendEvent } from './speech-backend.ts'
 
@@ -39,10 +39,13 @@ export class PythonSpeechBackend implements SpeechBackend {
   async start(emit: (event: SpeechBackendEvent) => void): Promise<void> {
     if (this.child !== undefined) throw new Error('local speech worker is already started')
     this.emit = emit
-    const args = [resolve(this.config.workerScript)]
-    if (this.config.modelDir !== undefined && this.config.modelDir !== '') args.push('--model-dir', this.config.modelDir)
-    if (this.config.ttsRoot !== undefined && this.config.ttsRoot !== '') args.push('--tts-root', this.config.ttsRoot)
-    const child = spawn(this.config.pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    const workerScript = resolve(this.config.workerScript)
+    const repoRoot = dirname(dirname(workerScript))
+    const pythonPath = isAbsolute(this.config.pythonPath) ? this.config.pythonPath : resolve(repoRoot, this.config.pythonPath)
+    const args = [workerScript]
+    if (this.config.modelDir !== undefined && this.config.modelDir !== '') args.push('--model-dir', this.resolveRepoPath(this.config.modelDir, repoRoot))
+    if (this.config.ttsRoot !== undefined && this.config.ttsRoot !== '') args.push('--tts-root', this.resolveRepoPath(this.config.ttsRoot, repoRoot))
+    const child = spawn(pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     this.child = child
     const lines = createInterface({ input: child.stdout })
     lines.on('line', (line) => {
@@ -98,6 +101,10 @@ export class PythonSpeechBackend implements SpeechBackend {
   private send(message: Record<string, unknown>): void {
     if (this.child === undefined || this.child.stdin.destroyed) return
     this.child.stdin.write(JSON.stringify(message) + '\n')
+  }
+
+  private resolveRepoPath(value: string, repoRoot: string): string {
+    return isAbsolute(value) ? value : resolve(repoRoot, value)
   }
 
   private receive(message: WorkerMessage): void {

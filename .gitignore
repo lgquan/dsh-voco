@@ -6,5 +6,7 @@ dist/
 **/__pycache__/
 *.pyc
 **/generated_audio/
+speech/.venv/
+speech/moss_tts_runtime/models/
 
 .npmrc

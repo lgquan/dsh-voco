@@ -20,6 +20,7 @@
 ```powershell
 pnpm install
 pnpm build
+pnpm run setup:voice-local
 $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
@@ -34,7 +35,7 @@ dsh web
 
 ## 本地语音环境
 
-需要单独创建 Python 环境并安装 `speech/requirements.txt`。配置 `cordis.patch.yml` 中的 `pythonPath`、`ttsRoot` 和 `modelDir`，其中 MOSS-TTS-Nano 代码与模型建议放在 D 盘。worker 会将 ModelScope、Torch 和 Hugging Face 缓存放在原型缓存目录，避免占用系统盘。
+安装后先执行 `pnpm run setup:voice-local`。它会在 `speech/.venv` 创建独立 Python 环境，安装 `speech/requirements.txt`，并预下载 FunASR 与 MOSS-TTS-Nano ONNX 模型。之后再执行 `dsh web`，运行阶段只从 D 盘缓存加载，不临时下载模型。worker 会将 ModelScope、Torch 和 Hugging Face 缓存放在 `speech/.cache`，避免占用系统盘。
 
 ## 限制
 

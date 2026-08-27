@@ -23,7 +23,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   pythonPath: z.string().default('python'),
   workerScript: z.string().default('speech/worker.py'),
-  modelDir: z.string(),
+  modelDir: z.string().default('speech/moss_tts_runtime/models'),
   ttsRoot: z.string(),
   startupTimeoutMs: z.natural().min(1).default(120_000),
   inputSampleRate: z.natural().min(1).default(16_000),

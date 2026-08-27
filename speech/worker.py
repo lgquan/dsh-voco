@@ -23,8 +23,9 @@ END_SILENCE_SAMPLES = int(SAMPLE_RATE * 0.6)
 
 class SpeechWorker:
     def __init__(self, model_dir: str | None, tts_root: str | None) -> None:
-        self.model_dir = Path(model_dir).expanduser().resolve() if model_dir else None
-        self.tts_root = Path(tts_root).expanduser().resolve() if tts_root else None
+        repo_root = Path(__file__).resolve().parents[1]
+        self.model_dir = self.resolve_path(model_dir, repo_root) if model_dir else None
+        self.tts_root = self.resolve_path(tts_root, repo_root) if tts_root else None
         self.emit_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.tts_stop = threading.Event()
@@ -38,6 +39,11 @@ class SpeechWorker:
         self.vad_model: Any = None
         self.asr_model: Any = None
         self.tts_runtime: Any = None
+
+    @staticmethod
+    def resolve_path(value: str, base: Path) -> Path:
+        path = Path(value).expanduser()
+        return (path if path.is_absolute() else base / path).resolve()
 
     def emit(self, message: dict[str, object]) -> None:
         with self.emit_lock:

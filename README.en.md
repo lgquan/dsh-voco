@@ -20,6 +20,7 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 ```powershell
 pnpm install
 pnpm build
+pnpm run setup:voice-local
 $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
@@ -34,7 +35,7 @@ dsh web
 
 ## Local speech environment
 
-Create a separate Python environment and install `speech/requirements.txt`. Configure `pythonPath`, `ttsRoot`, and `modelDir` in `cordis.patch.yml`; keep the MOSS-TTS-Nano checkout and model assets on D:. Worker caches are redirected to the prototype cache directory.
+Run `pnpm run setup:voice-local` after installation. It creates `speech/.venv`, installs `speech/requirements.txt`, and pre-downloads FunASR and MOSS-TTS-Nano ONNX assets. Start `dsh web` only after setup completes; runtime then loads from the D: cache instead of downloading models. Worker caches are kept under `speech/.cache`.
 
 ## Limitations
 

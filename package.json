@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc -b && tsdown",
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "setup:voice-local": "powershell -ExecutionPolicy Bypass -File speech/setup-local-voice.ps1"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

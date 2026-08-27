@@ -32,3 +32,7 @@ Development example:
     $env:DSH_MOSS_TTS_ROOT = "$PWD\prototypes\local-voice-benchmark\vendor\MOSS-TTS-Nano"
     $env:DSH_MOSS_MODEL_DIR = "$env:DSH_MOSS_TTS_ROOT\models"
     .\.venv-speech\Scripts\python.exe speech\worker.py
+
+For a normal installation, run `pnpm run setup:voice-local` from the repository
+root before starting DSH. The setup command is idempotent and may be rerun after
+upgrading dependencies or deleting the cache.
