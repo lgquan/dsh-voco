@@ -39,6 +39,7 @@
     }
   },
   "dependencies": {
+    "@lgquan/dsh-llm-tool-call-compat": "workspace:*",
     "@lgquan/dsh-client-ui-voice": "workspace:*",
     "@lgquan/dsh-voice": "workspace:*",
     "@lgquan/dsh-voice-assistant": "workspace:*",

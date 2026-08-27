@@ -27,6 +27,12 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@22.20.1)(jsdom@30.0.1)(vite@8.2.2(@types/node@22.20.1))
 
+  packages/llm-tool-call-compat:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+
   packages/ui-voice:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -93,6 +99,9 @@ importers:
       '@lgquan/dsh-client-ui-voice':
         specifier: workspace:*
         version: link:../ui-voice
+      '@lgquan/dsh-llm-tool-call-compat':
+        specifier: workspace:*
+        version: link:../llm-tool-call-compat
       '@lgquan/dsh-voice':
         specifier: workspace:*
         version: link:../voice

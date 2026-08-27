@@ -1,5 +1,8 @@
 # Voice interaction mode layered after dsh-base and dsh-web-app.
 - insert:
+    - id: llm-tool-call-compat
+      name: '@lgquan/dsh-llm-tool-call-compat'
+
     - id: voice
       name: '@lgquan/dsh-voice'
       config:

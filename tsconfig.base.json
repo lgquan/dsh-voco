@@ -64,6 +64,9 @@
       ],
       "@lgquan/dsh-voice-agent/invariant": [
         "./packages/voice-app/src/invariant.ts"
+      ],
+      "@lgquan/dsh-llm-tool-call-compat": [
+        "./packages/llm-tool-call-compat/src"
       ]
     }
   }

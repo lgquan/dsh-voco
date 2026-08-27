@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/llm-tool-call-compat" },
     { "path": "./packages/voice" },
     { "path": "./packages/voice-local" },
     { "path": "./packages/voice-assistant" },
