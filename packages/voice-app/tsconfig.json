@@ -12,7 +12,7 @@
       "path": "../voice"
     },
     {
-      "path": "../voice-duplex"
+      "path": "../voice-local"
     },
     {
       "path": "../voice-assistant"

@@ -32,11 +32,11 @@
       "@wayneyu430227/dsh-voice/invariant": [
         "./packages/voice/src/invariant.ts"
       ],
-      "@wayneyu430227/dsh-voice-duplex": [
-        "./packages/voice-duplex/src"
+      "@wayneyu430227/dsh-voice-local": [
+        "./packages/voice-local/src"
       ],
-      "@wayneyu430227/dsh-voice-duplex/invariant": [
-        "./packages/voice-duplex/src/invariant.ts"
+      "@wayneyu430227/dsh-voice-local/invariant": [
+        "./packages/voice-local/src/invariant.ts"
       ],
       "@wayneyu430227/dsh-voice-assistant": [
         "./packages/voice-assistant/src"

@@ -99,9 +99,9 @@ importers:
       '@wayneyu430227/dsh-voice-assistant':
         specifier: workspace:*
         version: link:../voice-assistant
-      '@wayneyu430227/dsh-voice-duplex':
+      '@wayneyu430227/dsh-voice-local':
         specifier: workspace:*
-        version: link:../voice-duplex
+        version: link:../voice-local
       '@wayneyu430227/dsh-voice-web':
         specifier: workspace:*
         version: link:../voice-web
@@ -180,6 +180,25 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      '@wayneyu430227/dsh-voice':
+        specifier: workspace:*
+        version: link:../voice
+
+  packages/voice-local:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-invariants':
+        specifier: ^0.1.1-rc.1
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)
+      '@deepseek-ai/dsh-session':
+        specifier: ^0.1.1-rc.1
+        version: 0.1.1-rc.2(a4e4bb24a1f3580ac25e11cfa3c6b8cc)
       '@wayneyu430227/dsh-voice':
         specifier: workspace:*
         version: link:../voice

@@ -8,7 +8,7 @@
 
 ## 交互
 
-- **全双工实时对话**：基于 ByteDance Duplex，像和人说话一样自然，边说边听、随时打断、随时插话纠正。
+- **本地实时对话**：浏览器采集音频，经本地 VAD、FunASR 和 MOSS-TTS-Nano 处理，支持边说边听和打断。
 - **对话式派活**：前端只暴露三个编排工具——`realtime_delegation`（把「帮我查一下 xxx」变成真正的后台任务）、`send_task_message`（补充要求 / 纠正方向）、`cancel_task`（取消）。
 - **连续任务上下文**：同一语音会话的多次委派复用一个后台 Agent Session，每次任务仍有独立 delegation id。
 - **异步结果回灌**：进度（STATUS）和口语结果（COMPLETE）会回灌进语音对话；回复按问题复杂度自适应详略，不设固定字数上限。
@@ -21,7 +21,7 @@
 pnpm install
 pnpm build
 $repo = (Resolve-Path .).Path
-dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-duplex" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
+dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
 
 仓库名是 `dsh-live`；内部 `@wayneyu430227/*` 包名暂时保留，用来兼容并替换现有 DSH profile，无需迁移用户配置。
@@ -32,14 +32,9 @@ dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "
 dsh web
 ```
 
-## 凭据
+## 本地语音环境
 
-Duplex provider 从环境读取两个凭据引用：
-
-- `DUPLEX_API_KEY` —— ByteDance 火山引擎 access key。
-- `DUPLEX_APP_KEY` —— 对应的 app key。
-
-开始语音对话前需设置两者；缺少时 provider 会话握手失败。
+需要单独创建 Python 环境并安装 `speech/requirements.txt`。配置 `cordis.patch.yml` 中的 `pythonPath`、`ttsRoot` 和 `modelDir`，其中 MOSS-TTS-Nano 代码与模型建议放在 D 盘。worker 会将 ModelScope、Torch 和 Hugging Face 缓存放在原型缓存目录，避免占用系统盘。
 
 ## 限制
 

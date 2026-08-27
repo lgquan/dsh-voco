@@ -3,25 +3,18 @@
     - id: voice
       name: '@wayneyu430227/dsh-voice'
       config:
-        provider: duplex
+        provider: local
 
-    - id: voice-duplex
-      name: '@wayneyu430227/dsh-voice-duplex'
+    - id: voice-local
+      name: '@wayneyu430227/dsh-voice-local'
       config:
-        interactionMode: frontend-agent
-        frontendAgentTriggerAudioPath: frontend-trigger.pcm
-        apiKeyEnv: DUPLEX_API_KEY
-        appKeyEnv: DUPLEX_APP_KEY
-        endpoint: wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue
-        authMode: app-key
-        appId: '7620217375'
-        resourceId: volc.speech.dialog
-        model: 1.2.6.1
-        speaker: zh_female_xiaohe_jupiter_bigtts
-        endSmoothWindowMs: 1500
-        enableCustomVad: true
-        transcriptionDeltaTimeoutMs: 1000
-        frontendAgentActivationDelayMs: 1000
+        pythonPath: python
+        workerScript: ../../../speech/worker.py
+        modelDir: prototypes/local-voice-benchmark/vendor/MOSS-TTS-Nano/models
+        ttsRoot: speech/moss_tts_runtime
+        startupTimeoutMs: 120000
+        inputSampleRate: 16000
+        outputSampleRate: 48000
 
     - id: voice-assistant
       name: '@wayneyu430227/dsh-voice-assistant'

@@ -30,8 +30,8 @@ interface VoiceReadyEvent {
   readonly type: 'ready'
   readonly voiceSessionId: string
   readonly audio: {
-    readonly inputSampleRate: 16_000
-    readonly outputSampleRate: 24_000
+    readonly inputSampleRate: number
+    readonly outputSampleRate: number
     readonly format: 'pcm_s16le'
   }
   readonly interactionMode: 'speech-shell' | 'frontend-agent'
@@ -250,6 +250,8 @@ async function openVoiceTransport(
   let socketClosed = false
   let ready = false
   let outputDone = false
+  let inputSampleRate = 16_000
+  let outputSampleRate = 24_000
   let playAt = outputContext.currentTime
   const chunks: number[] = []
   const playing = new Set<AudioBufferSourceNode>()
@@ -295,7 +297,7 @@ async function openVoiceTransport(
   const onMessage = (message: MessageEvent): void => {
     if (!ready) return
     if (message.data instanceof ArrayBuffer) {
-      schedulePcm(outputContext, message.data, playing, notifyPlaybackEnded, (value) => { playAt = value }, playAt)
+      schedulePcm(outputContext, message.data, outputSampleRate, playing, notifyPlaybackEnded, (value) => { playAt = value }, playAt)
       handlers.onBinary(message.data)
       return
     }
@@ -320,7 +322,9 @@ async function openVoiceTransport(
     await socketOpened(socket, signal)
     socket.addEventListener('message', onMessage)
     socket.addEventListener('close', onClose)
-    await socketReady(socket, signal)
+    const readyEvent = await socketReady(socket, signal)
+    inputSampleRate = readyEvent.audio.inputSampleRate
+    outputSampleRate = readyEvent.audio.outputSampleRate
     ready = true
     const captured = await microphone(signal)
     if (openingStopped(signal, stopped)) {
@@ -336,9 +340,10 @@ async function openVoiceTransport(
     silent.gain.value = 0
     processor.port.onmessage = (event: MessageEvent<Float32Array>) => {
       if (socket.readyState !== WebSocket.OPEN) return
-      chunks.push(...resample(event.data, inputContext.sampleRate, 16_000))
-      while (chunks.length >= 3200) {
-        const part = chunks.splice(0, 3200)
+      chunks.push(...resample(event.data, inputContext.sampleRate, inputSampleRate))
+      const frameSize = Math.max(1, Math.round(inputSampleRate / 5))
+      while (chunks.length >= frameSize) {
+        const part = chunks.splice(0, frameSize)
         const pcm = new Int16Array(part.length)
         for (const [index, sample] of part.entries()) {
           pcm[index] = Math.round(Math.max(-1, Math.min(1, sample)) * 32767)
@@ -481,15 +486,17 @@ function parseReady(value: unknown): VoiceReadyEvent {
   const voiceSessionId = stringOf(event.voiceSessionId)
   if (voiceSessionId === '') throw new Error('voice websocket ready event has no voiceSessionId')
   const audio = recordOf(event.audio)
-  if (audio?.inputSampleRate !== 16_000 || audio.outputSampleRate !== 24_000 || audio.format !== 'pcm_s16le') {
+  if (audio?.inputSampleRate !== 16_000
+    || (audio.outputSampleRate !== 24_000 && audio.outputSampleRate !== 48_000)
+    || audio.format !== 'pcm_s16le') {
     throw new Error('voice websocket ready event has unsupported audio settings')
   }
   if (event.interactionMode !== 'speech-shell' && event.interactionMode !== 'frontend-agent') {
     throw new Error('voice websocket ready event has an invalid interactionMode')
   }
   return { type: 'ready', voiceSessionId, audio: {
-    inputSampleRate: 16_000,
-    outputSampleRate: 24_000,
+    inputSampleRate: audio.inputSampleRate,
+    outputSampleRate: audio.outputSampleRate,
     format: 'pcm_s16le',
   }, interactionMode: event.interactionMode }
 }
@@ -543,13 +550,14 @@ export function resample(input: Float32Array, fromRate: number, toRate: number):
 function schedulePcm(
   context: AudioContext,
   bytes: ArrayBuffer,
+  sampleRate: number,
   playing: Set<AudioBufferSourceNode>,
   ended: () => void,
   setPlayAt: (value: number) => void,
   currentPlayAt: number,
 ): void {
   const pcm = new Int16Array(bytes)
-  const buffer = context.createBuffer(1, pcm.length, 24_000)
+  const buffer = context.createBuffer(1, pcm.length, sampleRate)
   const channel = buffer.getChannelData(0)
   for (const [index, sample] of pcm.entries()) channel[index] = sample / 32768
   const node = context.createBufferSource()

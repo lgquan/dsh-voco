@@ -42,7 +42,7 @@
     "@wayneyu430227/dsh-client-ui-voice": "workspace:*",
     "@wayneyu430227/dsh-voice": "workspace:*",
     "@wayneyu430227/dsh-voice-assistant": "workspace:*",
-    "@wayneyu430227/dsh-voice-duplex": "workspace:*",
+    "@wayneyu430227/dsh-voice-local": "workspace:*",
     "@wayneyu430227/dsh-voice-web": "workspace:*"
   },
   "peerDependencies": {

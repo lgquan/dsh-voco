@@ -2,7 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/voice" },
-    { "path": "./packages/voice-duplex" },
+    { "path": "./packages/voice-local" },
     { "path": "./packages/voice-assistant" },
     { "path": "./packages/voice-web" },
     { "path": "./packages/ui-voice" },

@@ -2,5 +2,9 @@ node_modules/
 lib/
 *.tsbuildinfo
 dist/
+.cache/
+**/__pycache__/
+*.pyc
+**/generated_audio/
 
 .npmrc

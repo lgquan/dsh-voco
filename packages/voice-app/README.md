@@ -10,19 +10,19 @@ The `dsh-live` patch-layer bundle attaches provider transport directly to the cu
 
 #### What the model sees
 
-Voice-initiated work reaches a fresh task Agent only as an accepted `realtime_delegation` envelope and exact-id updates. That task Agent alone receives the scoped `send_voice_message` backend tool for `STATUS` and `COMPLETE`; the bridge creates the target directly, so no project-listing tool is added. The Duplex frontend Agent owns the spoken conversation and sees exactly its three orchestration tools.
+Voice-initiated work reaches a fresh task Agent only as an accepted `realtime_delegation` envelope and exact-id updates. That task Agent alone receives the scoped `send_voice_message` backend tool for `STATUS` and `COMPLETE`; the bridge creates the target directly, so no project-listing tool is added. The local provider owns speech input and output while the bridge exposes only task orchestration tools.
 
 #### Token effect
 
-Accepted delegation text, ordinary task work, and backend reporting calls consume text-model tokens; Duplex separately spends provider tokens on the voice conversation and task summaries.
+Accepted delegation text, ordinary task work, and backend reporting calls consume text-model tokens; local VAD, ASR, and TTS add no per-minute voice API charge.
 
 #### KV Cache effect
 
-Only accepted commands extend the continuously reused task Agent history; recent Voice Session utterances restore a fresh Duplex conversation.
+Only accepted commands extend the continuously reused task Agent history; recent Voice Session utterances restore the local conversation.
 
 ## Known Limitations and Deferred Work
 
-- The shipped first provider is Duplex; the service seam is provider-neutral so Realtime/Live providers can be added without changing the assistant consumer.
+- The shipped provider is local CPU speech; the service seam keeps model details out of the assistant consumer.
 - Raw audio remains process-local; a fresh provider connection restores bounded context from durable completed utterance text.
 - The filtered Voice history index is browser-local; clearing site data does not delete the underlying Sessions.
 - The browser client surface targets the dsh Web UI: it is emitted by the copied dsh client tsdown preset and loads through the dsh web runtime's `window.__ModuleLoader__` contract. The server-side packages are transport-agnostic, but the microphone/playback UI is not a standalone browser plugin.

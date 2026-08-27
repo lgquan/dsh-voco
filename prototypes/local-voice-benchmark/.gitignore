@@ -1,0 +1,10 @@
+.cache/
+.venv-asr/
+.venv-tts/
+.venv-moss-tts/
+audio/
+models/
+results/
+vendor/
+__pycache__/
+*.pyc

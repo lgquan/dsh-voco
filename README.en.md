@@ -8,7 +8,7 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 
 ## Interaction
 
-- **Full-duplex, real-time**: ByteDance Duplex makes it feel like talking to a person — listen and speak at once, interrupt, or correct yourself mid-sentence.
+- **Local real-time speech**: browser audio is handled by local VAD, FunASR, and MOSS-TTS-Nano, with interruption support.
 - **Conversational delegation**: the frontend exposes exactly three orchestration tools — `realtime_delegation` (turn "check this for me" into a real background task), `send_task_message` (add or correct requirements), and `cancel_task`.
 - **Continuous task context**: sequential delegations reuse one background Agent Session while retaining distinct delegation ids.
 - **Asynchronous result backfill**: progress (STATUS) and a spoken result (COMPLETE) flow back into the voice conversation, with adaptive detail and no fixed character cap.
@@ -21,7 +21,7 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 pnpm install
 pnpm build
 $repo = (Resolve-Path .).Path
-dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-duplex" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
+dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
 
 The repository is named `dsh-live`. The internal `@wayneyu430227/*` package names remain for compatibility with the existing DSH profile and user configuration.
@@ -32,14 +32,9 @@ The `dsh` command comes from `npm install -g @deepseek-ai/dsh`. Launch web (the 
 dsh web
 ```
 
-## Credentials
+## Local speech environment
 
-The Duplex provider reads two credential references from the environment:
-
-- `DUPLEX_API_KEY` — ByteDance Volcengine access key.
-- `DUPLEX_APP_KEY` — the matching app key.
-
-Set both before starting a voice conversation; the provider session fails the handshake without them.
+Create a separate Python environment and install `speech/requirements.txt`. Configure `pythonPath`, `ttsRoot`, and `modelDir` in `cordis.patch.yml`; keep the MOSS-TTS-Nano checkout and model assets on D:. Worker caches are redirected to the prototype cache directory.
 
 ## Limitations
 

@@ -23,4 +23,4 @@ Admitted text extends history like typed input; provider speech and frontend sch
 ## Known Limitations and Deferred Work
 
 - The first protocol version supports one automatic response policy and PCM signed 16-bit little-endian audio.
-- The bundled profile configures Duplex as `frontend-agent`; `speech-shell` remains the explicit transport-only fallback. Completed and interrupted text is durable, but raw audio and provider conversation state are not reconstructed after process restart or reconnect-grace expiry.
+- The bundled profile uses the local provider. Completed and interrupted text is durable, but raw audio and local model process state are not reconstructed after process restart.
