@@ -1,4 +1,4 @@
-# `@wayneyu430227/dsh-client-ui-voice`
+# `@lgquan/dsh-client-ui-voice`
 
 [English](README.md) | 中文
 

@@ -1,5 +1,5 @@
 {
-  "name": "@wayneyu430227/dsh-voice",
+  "name": "@lgquan/dsh-voice",
   "description": "Provider-neutral realtime voice session capability seam",
   "version": "0.1.2",
   "publishConfig": {
@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/WayneYu430/dsh-voice-agent.git",
+    "url": "git+https://github.com/lgquan/dsh-live.git",
     "directory": "packages/voice"
   },
   "type": "module",

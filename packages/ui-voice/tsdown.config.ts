@@ -1,2 +1,2 @@
 import { clientBundle } from '../../tsdown.client.ts'
-export default clientBundle('@wayneyu430227/dsh-client-ui-voice', ['lib/types/index.js', 'lib/types/invariant.js'])
+export default clientBundle('@lgquan/dsh-client-ui-voice', ['lib/types/index.js', 'lib/types/invariant.js'])

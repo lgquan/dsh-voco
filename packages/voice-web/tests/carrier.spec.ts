@@ -10,7 +10,7 @@ import VoiceRuntime, {
   type VoiceProvider,
   type VoiceProviderEvent,
   type VoiceProviderSession,
-} from '@wayneyu430227/dsh-voice'
+} from '@lgquan/dsh-voice'
 import WebSocket, { WebSocketServer } from 'ws'
 import { apply, type Config } from '../src/index.ts'
 

@@ -1,4 +1,4 @@
-/** Voice-to-Agent driver using ordinary followup, steer and cancel operations. @module @wayneyu430227/dsh-voice-assistant */
+/** Voice-to-Agent driver using ordinary followup, steer and cancel operations. @module @lgquan/dsh-voice-assistant */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -23,7 +23,7 @@ import {
   type VoiceSessionInfo,
   type VoiceTaskMessage,
   type VoiceUtteranceId,
-} from '@wayneyu430227/dsh-voice'
+} from '@lgquan/dsh-voice'
 import { installVoiceMessageTool, type VoiceMessageInput, type VoiceMessageReceipt } from './tool.ts'
 
 export const name = 'voice-assistant'

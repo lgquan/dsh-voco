@@ -25,7 +25,7 @@ $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
 
-仓库名是 `dsh-live`；内部 `@wayneyu430227/*` 包名暂时保留，用来兼容并替换现有 DSH profile，无需迁移用户配置。
+仓库名是 `dsh-live`，内部包统一使用 `@lgquan/*` 命名空间。
 
 `dsh` 命令来自 `npm install -g @deepseek-ai/dsh`。启动 web（voice 界面随之加载）：
 

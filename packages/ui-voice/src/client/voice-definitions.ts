@@ -3,7 +3,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   TaskObservation, VoiceTaskId, VoiceUtteranceId,
-} from '@wayneyu430227/dsh-voice'
+} from '@lgquan/dsh-voice'
 
 /** Renderer-ready durable Voice utterance. */
 export interface VoiceUtteranceChatData {

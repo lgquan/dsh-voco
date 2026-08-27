@@ -8,7 +8,7 @@ import VoiceRuntime, {
   VoiceUtteranceId,
   type TaskObservation,
   type VoiceProviderSession,
-} from '@wayneyu430227/dsh-voice'
+} from '@lgquan/dsh-voice'
 import { describe, expect, it, vi } from 'vitest'
 
 interface FakeProviderSession {

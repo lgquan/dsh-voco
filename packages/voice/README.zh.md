@@ -1,4 +1,4 @@
-# `@wayneyu430227/dsh-voice`
+# `@lgquan/dsh-voice`
 
 [English](README.md) | 中文
 

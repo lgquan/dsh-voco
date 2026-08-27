@@ -1,12 +1,12 @@
 # Voice interaction mode layered after dsh-base and dsh-web-app.
 - insert:
     - id: voice
-      name: '@wayneyu430227/dsh-voice'
+      name: '@lgquan/dsh-voice'
       config:
         provider: local
 
     - id: voice-local
-      name: '@wayneyu430227/dsh-voice-local'
+      name: '@lgquan/dsh-voice-local'
       config:
         pythonPath: speech/.venv/Scripts/python.exe
         workerScript: ../../../speech/worker.py
@@ -16,7 +16,7 @@
         outputSampleRate: 48000
 
     - id: voice-assistant
-      name: '@wayneyu430227/dsh-voice-assistant'
+      name: '@lgquan/dsh-voice-assistant'
       config:
         maxPendingObservations: 64
         restoreConversation: true
@@ -27,11 +27,11 @@
         cancelledAnnouncement: 任务已取消。
 
     - id: voice-web
-      name: '@wayneyu430227/dsh-voice-web'
+      name: '@lgquan/dsh-voice-web'
       inject: [webRuntime]
       config:
         trustedHosts: !!js ctx.webRuntime.trustedHosts
         maxAudioFrameBytes: 65536
 
     - id: ui-voice
-      name: '@wayneyu430227/dsh-client-ui-voice'
+      name: '@lgquan/dsh-client-ui-voice'

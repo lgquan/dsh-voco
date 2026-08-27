@@ -10,7 +10,7 @@ import {
   type VoiceProviderSession,
   type VoiceResponsePolicy,
   type VoiceSessionId,
-} from '@wayneyu430227/dsh-voice'
+} from '@lgquan/dsh-voice'
 import type { SpeechBackend, SpeechBackendEvent } from './speech-backend.ts'
 
 const INTERACTION_MODE: VoiceInteractionMode = 'speech-shell'

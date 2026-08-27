@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { Buffer } from 'node:buffer'
 import { dirname, isAbsolute, resolve } from 'node:path'
-import type { VoiceAudioProfile } from '@wayneyu430227/dsh-voice'
+import type { VoiceAudioProfile } from '@lgquan/dsh-voice'
 import type { SpeechBackend, SpeechBackendEvent } from './speech-backend.ts'
 
 interface WorkerMessage {

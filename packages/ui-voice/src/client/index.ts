@@ -1,4 +1,4 @@
-/** Browser voice UI assembly. @module @wayneyu430227/dsh-client-ui-voice/client */
+/** Browser voice UI assembly. @module @lgquan/dsh-client-ui-voice/client */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'

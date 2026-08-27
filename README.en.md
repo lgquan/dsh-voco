@@ -25,7 +25,7 @@ $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
 ```
 
-The repository is named `dsh-live`. The internal `@wayneyu430227/*` package names remain for compatibility with the existing DSH profile and user configuration.
+The repository is named `dsh-live`, and all internal packages use the `@lgquan/*` namespace.
 
 The `dsh` command comes from `npm install -g @deepseek-ai/dsh`. Launch web (the voice surface loads with it):
 

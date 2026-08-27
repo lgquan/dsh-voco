@@ -1,4 +1,4 @@
-import { VoiceResponseId, VoiceSessionId } from '@wayneyu430227/dsh-voice'
+import { VoiceResponseId, VoiceSessionId } from '@lgquan/dsh-voice'
 import { describe, expect, it, vi } from 'vitest'
 import { LocalSession } from '../src/index.ts'
 import type { SpeechBackend, SpeechBackendEvent } from '../src/speech-backend.ts'

@@ -1,5 +1,5 @@
 {
-  "name": "@wayneyu430227/dsh-voice-agent",
+  "name": "@lgquan/dsh-voice-agent",
   "description": "Voice interaction profile patch layered over dsh-web-app",
   "version": "0.1.2",
   "publishConfig": {
@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/WayneYu430/dsh-voice-agent.git",
+    "url": "git+https://github.com/lgquan/dsh-live.git",
     "directory": "packages/voice-app"
   },
   "type": "module",
@@ -39,11 +39,11 @@
     }
   },
   "dependencies": {
-    "@wayneyu430227/dsh-client-ui-voice": "workspace:*",
-    "@wayneyu430227/dsh-voice": "workspace:*",
-    "@wayneyu430227/dsh-voice-assistant": "workspace:*",
-    "@wayneyu430227/dsh-voice-local": "workspace:*",
-    "@wayneyu430227/dsh-voice-web": "workspace:*"
+    "@lgquan/dsh-client-ui-voice": "workspace:*",
+    "@lgquan/dsh-voice": "workspace:*",
+    "@lgquan/dsh-voice-assistant": "workspace:*",
+    "@lgquan/dsh-voice-local": "workspace:*",
+    "@lgquan/dsh-voice-web": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

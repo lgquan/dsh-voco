@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { VoiceProvider } from '@wayneyu430227/dsh-voice'
+import type { VoiceProvider } from '@lgquan/dsh-voice'
 import { LocalSession } from './session.ts'
 import { PythonSpeechBackend } from './python-worker.ts'
 

@@ -17,7 +17,7 @@ import {
   type VoiceEvent,
   type VoiceInteractionMode,
   type VoiceSessionInfo,
-} from '@wayneyu430227/dsh-voice'
+} from '@lgquan/dsh-voice'
 import type { VoiceMessageInput, VoiceMessageReceipt } from '../src/tool.ts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

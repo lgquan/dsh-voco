@@ -26,43 +26,43 @@
       "node"
     ],
     "paths": {
-      "@wayneyu430227/dsh-voice": [
+      "@lgquan/dsh-voice": [
         "./packages/voice/src"
       ],
-      "@wayneyu430227/dsh-voice/invariant": [
+      "@lgquan/dsh-voice/invariant": [
         "./packages/voice/src/invariant.ts"
       ],
-      "@wayneyu430227/dsh-voice-local": [
+      "@lgquan/dsh-voice-local": [
         "./packages/voice-local/src"
       ],
-      "@wayneyu430227/dsh-voice-local/invariant": [
+      "@lgquan/dsh-voice-local/invariant": [
         "./packages/voice-local/src/invariant.ts"
       ],
-      "@wayneyu430227/dsh-voice-assistant": [
+      "@lgquan/dsh-voice-assistant": [
         "./packages/voice-assistant/src"
       ],
-      "@wayneyu430227/dsh-voice-assistant/invariant": [
+      "@lgquan/dsh-voice-assistant/invariant": [
         "./packages/voice-assistant/src/invariant.ts"
       ],
-      "@wayneyu430227/dsh-voice-web": [
+      "@lgquan/dsh-voice-web": [
         "./packages/voice-web/src"
       ],
-      "@wayneyu430227/dsh-voice-web/invariant": [
+      "@lgquan/dsh-voice-web/invariant": [
         "./packages/voice-web/src/invariant.ts"
       ],
-      "@wayneyu430227/dsh-client-ui-voice": [
+      "@lgquan/dsh-client-ui-voice": [
         "./packages/ui-voice/src"
       ],
-      "@wayneyu430227/dsh-client-ui-voice/invariant": [
+      "@lgquan/dsh-client-ui-voice/invariant": [
         "./packages/ui-voice/src/invariant.ts"
       ],
-      "@wayneyu430227/dsh-client-ui-voice/client": [
+      "@lgquan/dsh-client-ui-voice/client": [
         "./packages/ui-voice/src/client"
       ],
-      "@wayneyu430227/dsh-voice-agent": [
+      "@lgquan/dsh-voice-agent": [
         "./packages/voice-app/src"
       ],
-      "@wayneyu430227/dsh-voice-agent/invariant": [
+      "@lgquan/dsh-voice-agent/invariant": [
         "./packages/voice-app/src/invariant.ts"
       ]
     }

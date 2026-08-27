@@ -15,8 +15,8 @@ import VoiceRuntime, {
   type TaskObservation,
   type VoiceProviderEvent,
   type VoiceProviderSession,
-} from '@wayneyu430227/dsh-voice'
-import { apply, inject } from '@wayneyu430227/dsh-voice-assistant'
+} from '@lgquan/dsh-voice'
+import { apply, inject } from '@lgquan/dsh-voice-assistant'
 import { describe, expect, it, vi } from 'vitest'
 
 async function settle(): Promise<void> {

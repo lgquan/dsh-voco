@@ -1,5 +1,5 @@
 {
-  "name": "@wayneyu430227/dsh-voice-web",
+  "name": "@lgquan/dsh-voice-web",
   "description": "Dedicated browser WebSocket carrier for dsh-voice",
   "version": "0.1.2",
   "publishConfig": {
@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/WayneYu430/dsh-voice-agent.git",
+    "url": "git+https://github.com/lgquan/dsh-live.git",
     "directory": "packages/voice-web"
   },
   "type": "module",
@@ -37,7 +37,7 @@
     "@deepseek-ai/dsh-host-webserver": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-session": "^0.1.1-rc.1",
-    "@wayneyu430227/dsh-voice": "workspace:*"
+    "@lgquan/dsh-voice": "workspace:*"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
@@ -49,7 +49,7 @@
     "@deepseek-ai/dsh-host-webserver": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-session": "^0.1.1-rc.1",
-    "@wayneyu430227/dsh-voice": "workspace:*",
+    "@lgquan/dsh-voice": "workspace:*",
     "@types/ws": "^8.18.1"
   }
 }

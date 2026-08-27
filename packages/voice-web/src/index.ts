@@ -1,10 +1,10 @@
-/** Dedicated browser WebSocket carrier for realtime voice audio and events. @module @wayneyu430227/dsh-voice-web */
+/** Dedicated browser WebSocket carrier for realtime voice audio and events. @module @lgquan/dsh-voice-web */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { VoiceEvent } from '@wayneyu430227/dsh-voice'
+import type { VoiceEvent } from '@lgquan/dsh-voice'
 import WebSocket, { WebSocketServer } from 'ws'
 
 export const name = 'voice-web'
