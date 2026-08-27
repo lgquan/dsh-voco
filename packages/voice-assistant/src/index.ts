@@ -362,7 +362,10 @@ export function apply(ctx: Context, config: Config = {}): void {
       type,
       detail,
     }, false)
-    void rewriteAndSpeak(binding, task.id, task.requestText, detail, type)
+    // Progress belongs in the folded task trace. Only user-actionable events
+    // should create a voice response; otherwise every backend heartbeat would
+    // become another chat bubble and another rewrite/TTS request.
+    if (type !== 'progress') void rewriteAndSpeak(binding, task.id, task.requestText, detail, type)
     if (type === 'question') task.waitingUser = true
     return { messageId, delivery: 'queued' }
   }

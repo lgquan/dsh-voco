@@ -278,7 +278,9 @@ describe('voice assistant driver', () => {
       agent: task.agent,
     })
     expect(progress).toMatchObject({ isError: false, value: { delivery: 'queued' } })
-    await vi.waitFor(() => { expect(displayed).toEqual(['你好，我在呢。', '正在检查文件内容。']) })
+    // Progress stays in the folded task trace and does not create another
+    // spoken response or chat bubble.
+    await vi.waitFor(() => { expect(displayed).toEqual(['你好，我在呢。']) })
 
     const complete = await ctx.tools.execute({
       signal: new AbortController().signal,
@@ -297,7 +299,6 @@ describe('voice assistant driver', () => {
     await vi.waitFor(() => {
       expect(displayed).toEqual([
         '你好，我在呢。',
-        '正在检查文件内容。',
         '已经创建了名为免费的 Markdown 文档。文件内容也已经检查完成。',
       ])
     })
@@ -498,7 +499,7 @@ describe('voice assistant driver', () => {
       agent: firstTask.agent,
     })
     expect(statusResult).toMatchObject({ isError: false, value: { delivery: 'queued' } })
-    expect(observations.at(-2)).toMatchObject({
+    expect(observations.at(-1)).toMatchObject({
       taskId,
       status: 'running',
       taskTurn: 1,
@@ -506,8 +507,8 @@ describe('voice assistant driver', () => {
       type: 'progress',
       detail: '正在扫描 packages/voice-assistant 的实现与测试。',
     })
-    expect(observations.at(-1)).toMatchObject({ taskId, voiceMessage: { text: '任务正在处理中。' } })
-    expect(requestResponse).toHaveBeenCalledTimes(1)
+    expect(observations.at(-1)).not.toHaveProperty('voiceMessage')
+    expect(requestResponse).toHaveBeenCalledTimes(0)
 
     const silentWarning = await ctx.tools.execute({
       signal: new AbortController().signal,
@@ -531,7 +532,7 @@ describe('voice assistant driver', () => {
       taskId,
       voiceMessage: { text: '任务遇到了需要注意的情况。' },
     })
-    expect(requestResponse).toHaveBeenCalledTimes(2)
+    expect(requestResponse).toHaveBeenCalledTimes(1)
 
     const completeResult = await ctx.tools.execute({
       signal: new AbortController().signal,
@@ -548,7 +549,7 @@ describe('voice assistant driver', () => {
       isError: false,
       value: { delivery: 'held_until_turn_end' },
     })
-    expect(requestResponse).toHaveBeenCalledTimes(2)
+    expect(requestResponse).toHaveBeenCalledTimes(1)
     const duplicateComplete = await ctx.tools.execute({
       signal: new AbortController().signal,
       callId: CallId('voice-complete-duplicate'),
@@ -585,7 +586,7 @@ describe('voice assistant driver', () => {
       detail: '语音模块检查完成，相关测试全部通过。',
       voiceMessage: { text: '语音模块检查完成，相关测试全部通过。' },
     })
-    expect(requestResponse).toHaveBeenCalledTimes(3)
+    expect(requestResponse).toHaveBeenCalledTimes(2)
 
     const loggedObservations = session.events.flatMap(event =>
       event.type === 'voice/task-observation' ? [event.data] : [])
@@ -665,7 +666,7 @@ describe('voice assistant driver', () => {
       channel: 'STATUS',
       detail: '断线期间仍在执行。',
     })
-    expect(requestResponse).toHaveBeenCalledTimes(3)
+    expect(requestResponse).toHaveBeenCalledTimes(2)
     emit?.({
       type: 'task.command',
       call: { id: VoiceCommandCallId('call-cancel'), command: { type: 'cancel_task', taskId: cancelTaskId } },
@@ -679,7 +680,7 @@ describe('voice assistant driver', () => {
     secondTask.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
     await settle()
     expect(observations.at(-1)).toMatchObject({ taskId: cancelTaskId, status: 'cancelled' })
-    expect(requestResponse).toHaveBeenCalledTimes(4)
+    expect(requestResponse).toHaveBeenCalledTimes(3)
     expect(session.events.flatMap(event =>
       event.type === 'voice/task-observation' ? [event.data] : [])).toEqual(observations)
 
@@ -696,7 +697,7 @@ describe('voice assistant driver', () => {
       kind: 'rejected', code: 'backend_unavailable', message: 'followup unavailable',
     })
     expect(observations.at(-1)).toMatchObject({ status: 'failed', reason: 'followup unavailable' })
-    expect(requestResponse).toHaveBeenCalledTimes(5)
+    expect(requestResponse).toHaveBeenCalledTimes(4)
     await ctx.voice.close(reconnectedVoice.id)
     await settle()
     expect(ctx.tools.get('send_voice_message', secondTask.agent)).toBeUndefined()
