@@ -23,6 +23,7 @@ import {
   type VoiceResponseId,
   type VoiceSessionId,
   type VoiceSessionInfo,
+  type VoiceTaskEventType,
   type VoiceTaskMessage,
   type VoiceUtteranceId,
 } from '@lgquan/dsh-voice'
@@ -106,7 +107,6 @@ interface ActiveTask {
   agent: Agent
   taskTurn?: number
   lastAssistantMessage?: VoiceTaskMessage
-  completionMessage?: VoiceTaskMessage
   completionDetail?: string
   disposeVoiceMessage?: () => void
   cancelling: boolean
@@ -233,12 +233,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     // Providers without the optional streaming face still receive a usable
     // response through the original observation protocol.
-    ctx.voice.appendTaskObservation(voiceId, {
+    append(binding, {
       taskId,
       status: 'running',
       voiceMessage: { id: VoiceTaskMessageId(randomUUID()), text },
-    })
-    ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
+    }, true)
   }
 
   const rewriteAndSpeak = async (
@@ -246,10 +245,16 @@ export function apply(ctx: Context, config: Config = {}): void {
     taskId: VoiceTaskId,
     requestText: string,
     original: string,
+    eventType: VoiceTaskEventType = 'result',
   ): Promise<void> => {
-    const llm = ctx.get('llm') as LlmRuntime | undefined
     const voiceId = binding.voiceSessionId
-    if (llm === undefined || voiceId === undefined || !binding.voiceAttached) return
+    if (voiceId === undefined || !binding.voiceAttached) return
+    let llm: LlmRuntime | undefined
+    try { llm = ctx.get('llm') as LlmRuntime | undefined } catch { llm = undefined }
+    if (llm === undefined) {
+      speakFragment(binding, taskId, fallbackEventSpeech(eventType, original))
+      return
+    }
     cancelRewrite(binding)
     const generation = binding.rewriteGeneration
     const abort = new AbortController()
@@ -262,11 +267,13 @@ export function apply(ctx: Context, config: Config = {}): void {
       '回复长度按用户要求和内容复杂度自适应：简单问题简短回答，需要解释时可以较长，不要为了简短遗漏必要内容。',
       '代码、表格、日志和冗长文件清单只概括；完整技术细节保留在后台 Agent 会话。',
       '文件名、扩展名、路径和英文缩写要按自然中文表达。不要说“点MD”这类机械读法；例如“免费.md”可说成“名为免费的 Markdown 文档”。',
+      eventType === 'result' ? '这是最终结果，回复长度按内容需要决定。' : '这是阶段事件，请用一到两句说明当前状态。',
       '',
       '用户原话：',
       requestText,
       '',
-      'Agent 工作结果：',
+      `Agent 事件类型：${eventType}`,
+      'Agent 提供的事实：',
       original,
     ].join('\n')
     const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'plugin', plugin: 'voice-assistant' } })
@@ -297,11 +304,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         emitted = true
         speakFragment(binding, taskId, fragment)
       }
-      if (!emitted) speakFragment(binding, taskId, fallbackSpeechText(original))
+      if (!emitted) speakFragment(binding, taskId, fallbackEventSpeech(eventType, original))
     } catch (error: unknown) {
       if (!abort.signal.aborted && generation === binding.rewriteGeneration) {
         ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
-        speakFragment(binding, taskId, fallbackSpeechText(original))
+        speakFragment(binding, taskId, fallbackEventSpeech(eventType, original))
       }
     } finally {
       if (binding.rewriteAbort === abort) binding.rewriteAbort = undefined
@@ -345,18 +352,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     if (task.cancelling) throw new Error(`voice delegation "${task.id}" is being cancelled`)
     const type = input.type ?? (input.channel === 'COMPLETE' ? 'result' : 'progress')
-    const detail = input.detail ?? input.message ?? input.voiceHint
-    if (detail === undefined || detail.trim() === '') throw new Error('voice message detail must be non-empty')
-    const voiceHint = input.voiceHint ?? input.message
+    const detail = input.detail.trim()
+    if (detail === '') throw new Error('voice message detail must be non-empty')
     const messageId = VoiceTaskMessageId(randomUUID())
-    const message = voiceHint === undefined || voiceHint.trim() === ''
-      ? undefined
-      : { id: messageId, text: voiceHint }
     if (type === 'result') {
       if (task.completionDetail !== undefined) {
         throw new Error(`voice delegation "${task.id}" already has a COMPLETE message`)
       }
-      if (message !== undefined) task.completionMessage = message
       task.completionDetail = detail
       task.waitingUser = false
       return { messageId, delivery: 'held_until_turn_end' }
@@ -371,8 +373,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       channel: 'STATUS',
       type,
       detail,
-      ...(message === undefined ? {} : { voiceHint: message.text, voiceMessage: message }),
-    }, message !== undefined)
+    }, false)
+    void rewriteAndSpeak(binding, task.id, task.requestText, detail, type)
     if (type === 'question') task.waitingUser = true
     return { messageId, delivery: 'queued' }
   }
@@ -941,10 +943,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           const lastProgress = sourceSession.events.findLast(event => (
             event.type === 'voice/task-observation'
             && event.data.taskId === task.id
-            && (event.data.voiceHint !== undefined || event.data.voiceMessage !== undefined)
+            && event.data.voiceMessage !== undefined
           ))
           const lastSpokenText = lastProgress?.type === 'voice/task-observation'
-            ? lastProgress.data.voiceHint ?? lastProgress.data.voiceMessage?.text
+            ? lastProgress.data.voiceMessage?.text
             : undefined
           const announcement = lastSpokenText === undefined
             ? config.interruptedAnnouncement ?? '上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。'
@@ -1020,6 +1022,16 @@ function fallbackSpeechText(text: string): string {
     .trim()
 }
 
+function fallbackEventSpeech(type: VoiceTaskEventType, detail: string): string {
+  switch (type) {
+    case 'result': return fallbackSpeechText(detail)
+    case 'question': return fallbackSpeechText(detail)
+    case 'progress': return '任务正在处理中。'
+    case 'warning': return '任务遇到了需要注意的情况。'
+    case 'error': return '任务执行遇到了问题。'
+  }
+}
+
 function observeSessionEvent(
   binding: Binding,
   event: SessionEvent,
@@ -1059,7 +1071,7 @@ function observeSessionEvent(
     : resultText === undefined ? undefined : fallbackSpeechText(resultText)
   const message = directText === undefined || directText === ''
     ? undefined
-    : { id: task.completionMessage?.id ?? VoiceTaskMessageId(randomUUID()), text: directText }
+    : { id: VoiceTaskMessageId(randomUUID()), text: directText }
   const hasCompletedOutput = task.interactionMode === 'frontend-agent'
     ? resultText !== undefined
     : task.lastAssistantMessage !== undefined
@@ -1078,7 +1090,6 @@ function observeSessionEvent(
       detail: resultText,
     }),
     ...(message === undefined ? {} : {
-      voiceHint: message.text,
       voiceMessage: message,
     }),
     ...(announcement === undefined ? {} : { announcement }),

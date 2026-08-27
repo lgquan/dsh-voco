@@ -175,7 +175,6 @@ export interface TaskObservation {
   readonly taskTurn?: number
   readonly type?: VoiceTaskEventType
   readonly detail?: string
-  readonly voiceHint?: string
   readonly channel?: 'STATUS' | 'COMPLETE'
   readonly voiceMessage?: VoiceTaskMessage
   readonly announcement?: string

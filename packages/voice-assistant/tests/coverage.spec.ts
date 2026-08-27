@@ -70,7 +70,6 @@ interface CapturedTask {
   agent: Agent
   taskTurn?: number
   lastAssistantMessage?: { readonly id: string; readonly text: string }
-  completionMessage?: { readonly id: string; readonly text: string }
   completionDetail?: string
   disposeVoiceMessage?: () => void
   cancelling: boolean
@@ -261,6 +260,8 @@ function makeHarness(config: Parameters<typeof apply>[1] = {}): Harness {
         return () => { memorySource = undefined }
       },
       appendTaskObservation: (_id: VoiceSessionId, observation: TaskObservation) => { observations.push(observation) },
+      appendSpeechText: () => false,
+      supportsSpeechText: () => false,
       requestResponse: vi.fn(),
       completeTaskCommand: (id: VoiceSessionId, callId: string, result: unknown) => {
         void id
@@ -689,7 +690,6 @@ describe('voice assistant branch coverage', () => {
     await harness.dispatch('session/event', task.agent.session, turnEnd(1, 'completed'))
     expect(harness.observations.at(-1)).toMatchObject({
       status: 'completed',
-      voiceHint: 'visible fallback',
       voiceMessage: { text: 'visible fallback' },
     })
     expect(harness.observations.at(-1)).not.toHaveProperty('announcement')
@@ -697,7 +697,7 @@ describe('voice assistant branch coverage', () => {
     expect(() => toolState.senders.at(-1)?.({
       delegationId: taskId,
       channel: 'STATUS',
-      message: 'late',
+      detail: 'late',
     })).toThrow('is not active')
 
     toolState.nextDispose = { throws: true, error: 'string disposal' }
@@ -743,7 +743,7 @@ describe('voice assistant branch coverage', () => {
     if (first === undefined) throw new Error('first continuous task missing')
     const firstMessage = (first.agent.followup as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as UserMessage
     await harness.dispatch('agent/inbox/claimed', { agent: first.agent, message: firstMessage, turn: 1 })
-    toolState.senders[0]?.({ delegationId: firstTaskId, channel: 'COMPLETE', message: 'first spoken result' })
+    toolState.senders[0]?.({ delegationId: firstTaskId, channel: 'COMPLETE', detail: 'first spoken result' })
     await harness.dispatch('session/event', first.agent.session, turnEnd(1, 'completed'))
 
     const secondTaskId = await startDelegation(harness, voice, 'second task')
@@ -841,16 +841,18 @@ describe('voice assistant branch coverage', () => {
     toolState.senders[0]?.({
       delegationId: taskId,
       channel: 'STATUS',
-      message: '需要确认。',
       type: 'question',
       detail: 'Migration deletes the old index and requires explicit confirmation.',
-      voiceHint: '这一步会删除旧索引，需要你确认后我再继续。',
     })
-    expect(harness.observations.at(-1)).toMatchObject({
+    expect(harness.observations.at(-2)).toMatchObject({
       taskId,
       status: 'waiting-user',
       type: 'question',
-      voiceHint: '这一步会删除旧索引，需要你确认后我再继续。',
+      detail: 'Migration deletes the old index and requires explicit confirmation.',
+    })
+    expect(harness.observations.at(-1)).toMatchObject({
+      taskId,
+      voiceMessage: { text: 'Migration deletes the old index and requires explicit confirmation.' },
     })
     await harness.dispatch('session/event', task.agent.session, turnEnd(1, 'completed'))
     expect(harness.bindings.get(sourceId)?.active).toBe(task)
@@ -872,10 +874,8 @@ describe('voice assistant branch coverage', () => {
     toolState.senders[0]?.({
       delegationId: taskId,
       channel: 'COMPLETE',
-      message: '迁移已完成。',
       type: 'result',
       detail: 'Migration and verification completed.',
-      voiceHint: '迁移已经完成，并且验证通过。',
     })
     await harness.dispatch('session/event', task.agent.session, turnEnd(2, 'completed'))
     expect(harness.bindings.get(sourceId)?.active).toBeUndefined()
@@ -883,7 +883,7 @@ describe('voice assistant branch coverage', () => {
       taskId,
       status: 'completed',
       type: 'result',
-      voiceHint: 'Migration and verification completed.',
+      voiceMessage: { text: 'Migration and verification completed.' },
     })
   })
 
@@ -917,10 +917,8 @@ describe('voice assistant branch coverage', () => {
     toolState.senders[0]?.({
       delegationId: taskId,
       channel: 'STATUS',
-      message: '已经找到问题，正在修改。',
       type: 'progress',
       detail: 'Sensitive command output must remain in the task trace.',
-      voiceHint: '已经找到问题，正在修改。',
     })
 
     await expect(harness.cleanup?.()).resolves.toBeUndefined()
@@ -928,7 +926,7 @@ describe('voice assistant branch coverage', () => {
       event.type === 'voice/task-observation' && event.data.status === 'interrupted'
     ))
     expect(interrupted?.type === 'voice/task-observation' ? interrupted.data.announcement : undefined)
-      .toBe('上次任务在“已经找到问题，正在修改。”之后因服务关闭而中断，没有自动重放。你可以告诉我是否继续。')
+      .toBe('上次任务在“任务正在处理中。”之后因服务关闭而中断，没有自动重放。你可以告诉我是否继续。')
     expect(interrupted?.type === 'voice/task-observation' ? interrupted.data.announcement : undefined)
       .not.toContain('Sensitive command output')
   })
@@ -1053,17 +1051,17 @@ describe('voice assistant branch coverage', () => {
     const statusBeforeClaim = toolState.senders[0]?.({
       delegationId: taskId,
       channel: 'STATUS',
-      message: 'starting',
+      detail: 'starting',
     })
     expect(statusBeforeClaim?.delivery).toBe('queued')
     const task = harness.bindings.get(sessionId)?.active
     if (task === undefined) throw new Error('task binding missing')
     task.interactionMode = 'speech-shell'
-    expect(() => toolState.senders[0]?.({ delegationId: taskId, channel: 'STATUS', message: 'x' }))
+    expect(() => toolState.senders[0]?.({ delegationId: taskId, channel: 'STATUS', detail: 'x' }))
       .toThrow('does not accept backend voice messages')
     task.interactionMode = 'frontend-agent'
     task.cancelling = true
-    expect(() => toolState.senders[0]?.({ delegationId: taskId, channel: 'STATUS', message: 'x' }))
+    expect(() => toolState.senders[0]?.({ delegationId: taskId, channel: 'STATUS', detail: 'x' }))
       .toThrow('is being cancelled')
     task.cancelling = false
 
