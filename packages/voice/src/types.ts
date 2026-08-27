@@ -152,13 +152,26 @@ export interface VoiceTaskSessionBound {
   readonly taskSessionId: SessionId
 }
 
-/** Provider-independent task state appended by an Agent consumer. */
+/** Durable lifecycle of one delegated Voice task. */
+export type VoiceTaskStatus = 'accepted' | 'queued' | 'running' | 'waiting-user' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+
+/** Durable state of one Voice conversation's fixed task Agent binding. */
+export interface VoiceAgentBindingState {
+  readonly voiceConversationId: SessionId
+  readonly agentSessionId: SessionId
+  readonly workspacePath?: string
+  readonly lastTaskId?: VoiceTaskId
+  readonly lastUsedAt: number
+  readonly status: 'idle' | VoiceTaskStatus
+}
+
+/** Provider-independent task event kind. */
 export type VoiceTaskEventType = 'progress' | 'result' | 'warning' | 'error' | 'question'
 
 /** Provider-independent task state appended by an Agent consumer. */
 export interface TaskObservation {
   readonly taskId: VoiceTaskId
-  readonly status: 'accepted' | 'queued' | 'running' | 'waiting-user' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+  readonly status: VoiceTaskStatus
   readonly taskTurn?: number
   readonly type?: VoiceTaskEventType
   readonly detail?: string
@@ -191,6 +204,11 @@ declare module '@deepseek-ai/dsh-session/types' {
      * @param event - durable task-session identity.
      */
     'voice/task-session-bound': VoiceTaskSessionBound
+    /**
+     * Snapshots the durable Voice conversation to task Agent binding.
+     * @param event - complete binding and lifecycle state.
+     */
+    'voice/agent-binding-state': VoiceAgentBindingState
     /**
      * Provider-independent task state made visible to a realtime voice Agent.
      * @param event - latest status or backend-authored message for one delegation.

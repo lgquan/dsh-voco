@@ -62,6 +62,7 @@ const VOICE_SESSION_EVENT_TYPES = [
   'voice/task-observation',
   'voice/task-delegated',
   'voice/task-session-bound',
+  'voice/agent-binding-state',
   'voice/utterance-start',
   'voice/utterance-end',
 ] as const
@@ -173,6 +174,17 @@ export function apply(ctx: Context, config: Config = {}): void {
       throw new Error(`voice-assistant: Agent session "${binding.sessionId}" is not live`)
     }
     session.append('voice/task-observation', observation)
+    const taskAgent = binding.continuousTaskAgent
+    if (taskAgent !== undefined) {
+      session.append('voice/agent-binding-state', {
+        voiceConversationId: binding.sessionId,
+        agentSessionId: taskAgent.taskSessionId,
+        ...(session.header.cwd === undefined ? {} : { workspacePath: session.header.cwd }),
+        lastTaskId: observation.taskId,
+        lastUsedAt: Date.now(),
+        status: observation.status,
+      })
+    }
     const voiceId = binding.voiceSessionId
     if (voiceId === undefined || !binding.voiceAttached) {
       if (deliver) binding.pending.push(observation)
@@ -442,13 +454,16 @@ export function apply(ctx: Context, config: Config = {}): void {
   const ensureContinuousTaskAgent = async (binding: Binding): Promise<ContinuousTaskAgent> => {
     if (binding.continuousTaskAgent !== undefined) return binding.continuousTaskAgent
     const sourceSession = requireSourceSession(binding)
+    const previousState = sourceSession.events.findLast(event => event.type === 'voice/agent-binding-state')
     const previousBound = sourceSession.events.findLast(event => event.type === 'voice/task-session-bound')
     const previousDelegation = sourceSession.events.findLast(event => event.type === 'voice/task-delegated')
-    const previousTaskSessionId = previousBound?.type === 'voice/task-session-bound'
-      ? previousBound.data.taskSessionId
-      : previousDelegation?.type === 'voice/task-delegated'
-        ? previousDelegation.data.taskSessionId
-        : undefined
+    const previousTaskSessionId = previousState?.type === 'voice/agent-binding-state'
+      ? previousState.data.agentSessionId
+      : previousBound?.type === 'voice/task-session-bound'
+        ? previousBound.data.taskSessionId
+        : previousDelegation?.type === 'voice/task-delegated'
+          ? previousDelegation.data.taskSessionId
+          : undefined
     if (previousTaskSessionId !== undefined) {
       try {
         const resumed = await resumeTaskAgent(binding, previousTaskSessionId)
@@ -462,10 +477,17 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const taskSessionId = SessionId(`session-${randomUUID()}`)
     const created = await createTaskAgent(binding, taskSessionId)
-    sourceSession.append('voice/task-session-bound', { taskSessionId })
     const resource = { taskSessionId, ...created }
     binding.continuousTaskAgent = resource
     taskBindings.set(taskSessionId, binding)
+    sourceSession.append('voice/task-session-bound', { taskSessionId })
+    sourceSession.append('voice/agent-binding-state', {
+      voiceConversationId: binding.sessionId,
+      agentSessionId: taskSessionId,
+      ...(sourceSession.header.cwd === undefined ? {} : { workspacePath: sourceSession.header.cwd }),
+      lastUsedAt: Date.now(),
+      status: 'idle',
+    })
     return resource
   }
 

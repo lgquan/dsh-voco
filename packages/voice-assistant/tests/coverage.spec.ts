@@ -716,7 +716,7 @@ describe('voice assistant branch coverage', () => {
   it('reuses one continuous task Agent across distinct sequential delegations', async () => {
     const harness = makeHarness({ taskSessionPolicy: 'continuous' })
     const sessionId = SessionId('continuous-source')
-    const source = harness.makeSession(sessionId)
+    const source = harness.makeSession(sessionId, { cwd: 'D:/workspace' })
     harness.agents.set(sessionId, harness.makeAgent(source))
     const voice = await harness.open(sessionId, 'frontend-agent')
 
@@ -745,6 +745,15 @@ describe('voice assistant branch coverage', () => {
     expect(source.events.filter(event => event.type === 'voice/task-session-bound').map(event => (
       event.type === 'voice/task-session-bound' ? event.data.taskSessionId : undefined
     ))).toEqual([first.taskSessionId])
+    const bindingState = source.events.findLast(event => event.type === 'voice/agent-binding-state')
+    expect(bindingState?.type === 'voice/agent-binding-state' ? bindingState.data : undefined).toMatchObject({
+      voiceConversationId: sessionId,
+      agentSessionId: first.taskSessionId,
+      workspacePath: 'D:/workspace',
+      lastTaskId: secondTaskId,
+      lastUsedAt: expect.any(Number),
+      status: 'queued',
+    })
     expect(harness.taskBindings.get(first.taskSessionId)).toBe(harness.bindings.get(sessionId))
   })
 
@@ -771,6 +780,32 @@ describe('voice assistant branch coverage', () => {
     expect(active.agent.followup).toHaveBeenCalledOnce()
     expect(harness.created).toHaveLength(1)
     expect(harness.taskBindings.get(taskSessionId)).toBe(harness.bindings.get(sourceId))
+  })
+
+  it('prefers the complete durable binding state when resuming a continuous Agent', async () => {
+    const harness = makeHarness({ taskSessionPolicy: 'continuous' })
+    const sourceId = SessionId('binding-state-source')
+    const staleId = SessionId('stale-task-session')
+    const currentId = SessionId('current-task-session')
+    const source = harness.makeSession(sourceId, { cwd: 'D:/bound-workspace' })
+    harness.makeSession(staleId)
+    harness.makeSession(currentId)
+    harness.agents.set(sourceId, harness.makeAgent(source))
+    source.append('voice/task-delegated', {
+      taskId: VoiceTaskId('stale-task'), taskSessionId: staleId, input: 'old',
+    })
+    source.append('voice/agent-binding-state', {
+      voiceConversationId: sourceId,
+      agentSessionId: currentId,
+      workspacePath: 'D:/bound-workspace',
+      lastTaskId: VoiceTaskId('current-task'),
+      lastUsedAt: 123,
+      status: 'completed',
+    })
+
+    const voice = await harness.open(sourceId, 'frontend-agent')
+    await startDelegation(harness, voice, 'continue current binding')
+    expect(harness.bindings.get(sourceId)?.active?.taskSessionId).toBe(currentId)
   })
 
   it('keeps a question task active and resumes the same Agent after the user replies', async () => {
