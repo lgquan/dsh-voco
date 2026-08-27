@@ -2,9 +2,9 @@
 
 [English](README.md) | 中文
 
-`voice` profile 的浏览器对话界面。麦克风按钮会先在当前 Workspace 或 Session 目录中创建并打开全新的普通未分组 Session，然后挂接 Voice Mode。Voice 来源不加入 Workspace 成员表，避免标准 New Session 流程把只含插件日志的来源当作 blank 文本对话复用；语音专用发现由插件历史负责。root 持有的 `/voice` WebSocket 让用户跳转查看委派任务时仍能继续采集和播放。只有服务端 `ready` 帧确认 provider session 与音频配置后才开始采集。该包采集带回声消除的音频，将其重采样为 16 kHz PCM，调度返回的 24 kHz PCM，并在新转写开始时立即停止待播放音频。Provider 错误或终止关闭会释放 WebSocket、麦克风 track、播放 source 与音频 context。
+`voice` profile 的浏览器对话界面。麦克风按钮把 Voice Mode 挂接到当前持久 Session；这个来源 Session 就是可恢复的语音会话窗口，新建普通 Session 才会得到新的语音会话身份。root 持有的 `/voice` WebSocket 让用户跳转查看委派任务时仍能继续采集和播放。只有服务端 `ready` 帧确认 provider session 与音频配置后才开始采集。该包采集带回声消除的音频，将其重采样为 16 kHz PCM，调度返回的 MP3 音频，并在新转写开始时立即停止待播放音频。Provider 错误或终止关闭会释放 WebSocket、麦克风 track、播放 source 与音频 context。
 
-持久 ASR 和 TTS utterance 以带 Voice 标识的聊天消息展示。每次实时 ASR update 会替换上一版中间字幕，TTS delta 则会追加到开放的 assistant utterance，直至持久终止事件到达。每个委派任务显示为紧凑状态卡；目标 DSH Task Session 出现在客户端列表后，按钮可单向跳转到该独立 Session。
+持久 ASR 和 TTS utterance 以带 Voice 标识的聊天消息展示。每次实时 ASR update 会替换上一版中间字幕；送入 TTS 的同一份文本会实时投影到开放的 assistant utterance，播放完成后持久化为 completed，中途打断则持久化为 interrupted。每个委派任务显示为默认折叠的紧凑状态卡，可展开摘要、取消活跃任务，并跳转到固定后台 Agent Session 查看完整过程。
 
 Voice transport 成功打开后，插件会把来源 Session 记录到浏览器本地历史索引。侧栏底部的语音历史入口列出仍存在于普通 Session 目录中的记录，标识当前通话，并可打开已保存的 Session；Host 投影与 Workspace 行无需增加 Voice 字段。Session log 仍是持久对话记录，索引只保存 Session id 和本地最近使用时间。
 

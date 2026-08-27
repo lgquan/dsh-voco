@@ -509,6 +509,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   const markVoiceTurn = (binding: Binding): void => {
     if (binding.interactionMode !== 'frontend-agent' || binding.voiceTurnMarked) return
     const session = requireSourceSession(binding)
+    if (session.events.some(event => event.type === 'turn/start')) {
+      binding.voiceTurnMarked = true
+      return
+    }
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     binding.voiceTurnMarked = true

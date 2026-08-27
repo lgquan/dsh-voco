@@ -713,6 +713,22 @@ describe('voice assistant branch coverage', () => {
     expect(harness.warnings).toHaveLength(2)
   })
 
+  it('does not duplicate the source turn marker after a persisted session is reopened', async () => {
+    const harness = makeHarness()
+    const sessionId = SessionId('marked-source')
+    const source = harness.makeSession(sessionId)
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const voice = await harness.open(sessionId, 'frontend-agent')
+
+    await harness.voiceEvent(voice, {
+      type: 'transcription.completed',
+      utteranceId: VoiceUtteranceId('reopened-input'),
+      text: '继续之前的语音对话',
+    })
+    expect(source.events.filter(event => event.type === 'turn/start')).toHaveLength(1)
+  })
+
   it('reuses one continuous task Agent across distinct sequential delegations', async () => {
     const harness = makeHarness({ taskSessionPolicy: 'continuous' })
     const sessionId = SessionId('continuous-source')
