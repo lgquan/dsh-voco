@@ -70,6 +70,7 @@ class FakeAudioContext {
   readonly source: FakeSource = { connect: vi.fn(), disconnect: vi.fn() }
   readonly gain: FakeGain = { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }
   readonly sources: FakeBufferSource[] = []
+  readonly resume = vi.fn().mockResolvedValue(undefined)
   readonly close = vi.fn().mockResolvedValue(undefined)
 
   constructor() { contexts.push(this) }
@@ -167,6 +168,20 @@ describe('VoiceController', () => {
     expect(getUserMedia).toHaveBeenCalledTimes(1)
     expect(worklets).toHaveLength(1)
     expect(controller.getSnapshot()).toMatchObject({ state: 'listening', sessionId: SESSION })
+    await controller.stop()
+  })
+
+  it('resumes browser audio contexts during the user-initiated start', async () => {
+    const controller = new VoiceController()
+    const opening = controller.start(SESSION)
+    await vi.waitFor(() => { expect(sockets).toHaveLength(1) })
+    expect(contexts).toHaveLength(2)
+    expect(contexts[0]!.resume).toHaveBeenCalledOnce()
+    expect(contexts[1]!.resume).toHaveBeenCalledOnce()
+    sockets[0]!.open()
+    await Promise.resolve()
+    sockets[0]!.ready()
+    await opening
     await controller.stop()
   })
 

@@ -64,8 +64,14 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
    */
   async start(sessionId: SessionId): Promise<void> {
     const generation = ++this.generation
+    // Construct and unlock both contexts before the first await so browser
+    // autoplay policy still treats the microphone button as the user gesture.
+    const contexts = createAudioContexts()
     await this.closeTransport()
-    if (generation !== this.generation) return
+    if (generation !== this.generation) {
+      await closeAudioContexts(contexts)
+      return
+    }
     const openingAbort = new AbortController()
     this.openingAbort = openingAbort
     this.publish({ state: 'connecting', sessionId, textById: {} })
@@ -78,7 +84,7 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
       }, openingAbort.signal, (opening) => {
         if (generation === this.generation) this.openingTransport = opening
         else void opening.close()
-      })
+      }, contexts)
       if (generation !== this.generation) {
         await transport.close()
         return
@@ -237,9 +243,9 @@ async function openVoiceTransport(
   handlers: VoiceTransportHandlers,
   signal: AbortSignal,
   onOpening: (transport: VoiceTransport) => void,
+  contexts: AudioContexts,
 ): Promise<VoiceTransport> {
-  const inputContext = new AudioContext()
-  const outputContext = new AudioContext()
+  const { input: inputContext, output: outputContext } = contexts
   const socket = new WebSocket(voiceUrl(sessionId))
   const workletUrl = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: 'text/javascript' }))
   let stream: MediaStream | undefined
@@ -362,6 +368,24 @@ async function openVoiceTransport(
   }
 
   return transport
+}
+
+interface AudioContexts {
+  readonly input: AudioContext
+  readonly output: AudioContext
+}
+
+function createAudioContexts(): AudioContexts {
+  const contexts = { input: new AudioContext(), output: new AudioContext() }
+  // Calling resume synchronously is required on browsers that start contexts
+  // suspended when they are created outside a trusted user gesture.
+  void contexts.input.resume().catch(() => {})
+  void contexts.output.resume().catch(() => {})
+  return contexts
+}
+
+async function closeAudioContexts(contexts: AudioContexts): Promise<void> {
+  await Promise.allSettled([contexts.input.close(), contexts.output.close()])
 }
 
 function microphone(signal: AbortSignal): Promise<MediaStream> {
