@@ -2,7 +2,13 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModel from '@deepseek-ai/dsh-agent-default-model'
-import { CallId, createAssistantMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, {
+  CallId,
+  LlmAdapter,
+  createAssistantMessage,
+  type GenerateOptions,
+  type StreamChunk,
+} from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -140,6 +146,135 @@ describe('voice assistant driver', () => {
     expect(requestResponse).toHaveBeenCalledTimes(1)
     await ctx.voice.close(voice.id)
     expect(ctx.agents.get(session.id)).toBe(agent)
+  })
+
+  it('rewrites a detail-only Agent result against the original request and streams identical UI and TTS text', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LlmRuntime)
+    const requests: GenerateOptions[] = []
+    class RewriteAdapter extends LlmAdapter {
+      async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        requests.push(options)
+        yield { type: 'text-delta', index: 0, text: '已经创建了名为免费的 Markdown 文档。' }
+        yield { type: 'text-delta', index: 0, text: '文件内容也已经检查完成。' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+    ctx.llm.registerAdapter(['test'], new RewriteAdapter())
+    const createdAgents = installAgentFactory(ctx)
+    await ctx.plugin(AgentDefaultModel, { provider: 'test', model: 'test' })
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(VoiceRuntime, { provider: 'test' })
+
+    const observations: TaskObservation[] = []
+    const displayed: string[] = []
+    const ttsInputs: string[] = []
+    let pendingSpeech = ''
+    let emit: ((event: VoiceProviderEvent) => void) | undefined
+    const providerSession: VoiceProviderSession = {
+      audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
+      interactionMode: 'frontend-agent',
+      appendAudio: () => {}, commitAudio: () => {}, interruptResponse: () => {}, playbackEnded: () => {},
+      appendTaskObservation: event => observations.push(event),
+      appendSpeechText: (text) => { pendingSpeech += text },
+      requestResponse: () => {
+        if (pendingSpeech === '') return
+        displayed.push(pendingSpeech)
+        ttsInputs.push(pendingSpeech)
+        pendingSpeech = ''
+      },
+      completeTaskCommand: () => {},
+      close: () => Promise.resolve(),
+    }
+    ctx.voice.registerProvider({
+      id: 'test', available: () => true,
+      connect: (input) => { emit = input.emit; return Promise.resolve(providerSession) },
+    })
+
+    const source = ctx.sessions.create(SessionId('voice-rewrite'))
+    const sourceAgent = {
+      id: source.id,
+      options: { provider: 'test', model: 'test' },
+      session: source,
+      inbox: {} as Agent['inbox'],
+      status: 'idle' as const,
+      ctx,
+      cancel: vi.fn(),
+      whenIdle: () => Promise.resolve(),
+      runMaintenance: () => Promise.reject(new Error('not used')),
+      send: () => {}, steer: vi.fn(), inject: () => {}, followup: vi.fn(),
+    } satisfies Agent
+    ctx.agents.register(sourceAgent)
+    await ctx.plugin({ apply, inject }, { taskSessionPolicy: 'continuous' })
+    await ctx.voice.open(source.id)
+
+    emit?.({
+      type: 'task.command',
+      call: {
+        id: VoiceCommandCallId('rewrite-start'),
+        command: { type: 'realtime_delegation', input: '请创建免费.md，并告诉我结果' },
+      },
+    })
+    await settle()
+    const task = createdAgents[0]
+    if (task === undefined) throw new Error('rewrite task was not created')
+    const delegated = task.followup.mock.calls[0]?.[0]
+    if (delegated === undefined) throw new Error('rewrite delegation message missing')
+    const taskId = observations.find(item => item.status === 'queued')?.taskId
+    if (taskId === undefined) throw new Error('rewrite task id missing')
+    task.session.append('turn/start', { turn: 1 })
+    ctx.emit('agent/inbox/claimed', { agent: task.agent, message: delegated, turn: 1 })
+    await settle()
+    emit?.({
+      type: 'task.command',
+      call: {
+        id: VoiceCommandCallId('rewrite-update'),
+        command: { type: 'send_task_message', taskId, message: '结果需要说明文件内容是否验证过' },
+      },
+    })
+    await settle()
+
+    const complete = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: CallId('rewrite-complete'),
+      name: 'send_voice_message',
+      arguments: {
+        delegation_id: taskId,
+        type: 'result',
+        detail: '已创建 C:\\Users\\QUAN\\Desktop\\测试\\免费.md，并验证文件内容正确。',
+      },
+      agent: task.agent,
+    })
+    expect(complete).toMatchObject({ isError: false, value: { delivery: 'held_until_turn_end' } })
+    task.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    await vi.waitFor(() => {
+      expect(displayed).toEqual([
+        '已经创建了名为免费的 Markdown 文档。',
+        '文件内容也已经检查完成。',
+      ])
+    })
+    expect(ttsInputs).toEqual(displayed)
+    expect(observations.at(-1)).toMatchObject({
+      taskId,
+      status: 'completed',
+      type: 'result',
+      detail: '已创建 C:\\Users\\QUAN\\Desktop\\测试\\免费.md，并验证文件内容正确。',
+    })
+    expect(observations.at(-1)).not.toHaveProperty('voiceHint')
+    expect(observations.at(-1)).not.toHaveProperty('voiceMessage')
+
+    const request = requests[0]
+    if (request === undefined) throw new Error('rewrite model was not called')
+    expect(request).not.toHaveProperty('maxTokens')
+    const prompt = request.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+    expect(prompt).toContain('请创建免费.md，并告诉我结果')
+    expect(prompt).toContain('补充要求：结果需要说明文件内容是否验证过')
+    expect(prompt).toContain('已创建 C:\\Users\\QUAN\\Desktop\\测试\\免费.md，并验证文件内容正确。')
+    expect(prompt).toContain('不要说“点MD”')
   })
 
   it('lets a frontend voice Agent drive one exact text-Agent task', async () => {
@@ -331,6 +466,28 @@ describe('voice assistant driver', () => {
     })
     expect(requestResponse).toHaveBeenCalledTimes(1)
 
+    const silentWarning = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: CallId('voice-warning-silent'),
+      name: 'send_voice_message',
+      arguments: {
+        delegation_id: taskId,
+        type: 'warning',
+        detail: '后台记录一条无需打断用户的兼容性提醒。',
+      },
+      agent: firstTask.agent,
+    })
+    expect(silentWarning).toMatchObject({ isError: false, value: { delivery: 'queued' } })
+    expect(observations.at(-1)).toMatchObject({
+      taskId,
+      status: 'running',
+      type: 'warning',
+      detail: '后台记录一条无需打断用户的兼容性提醒。',
+    })
+    expect(observations.at(-1)).not.toHaveProperty('voiceHint')
+    expect(observations.at(-1)).not.toHaveProperty('voiceMessage')
+    expect(requestResponse).toHaveBeenCalledTimes(1)
+
     const completeResult = await ctx.tools.execute({
       signal: new AbortController().signal,
       callId: CallId('voice-complete'),
@@ -339,7 +496,6 @@ describe('voice assistant driver', () => {
         delegation_id: taskId,
         type: 'result',
         detail: '语音模块检查完成，相关测试全部通过。',
-        voice_hint: '检查完成，没有发现问题。',
       },
       agent: firstTask.agent,
     })
@@ -382,8 +538,8 @@ describe('voice assistant driver', () => {
       channel: 'COMPLETE',
       type: 'result',
       detail: '语音模块检查完成，相关测试全部通过。',
-      voiceHint: '检查完成，没有发现问题。',
-      voiceMessage: { text: '检查完成，没有发现问题。' },
+      voiceHint: '语音模块检查完成，相关测试全部通过。',
+      voiceMessage: { text: '语音模块检查完成，相关测试全部通过。' },
     })
     expect(requestResponse).toHaveBeenCalledTimes(2)
 

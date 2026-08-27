@@ -10,7 +10,7 @@ const VOICE_MESSAGE_SECTION_ORDER = 118
 export interface VoiceMessageInput {
   readonly delegationId: VoiceTaskId
   readonly channel: 'STATUS' | 'COMPLETE'
-  readonly message: string
+  readonly message?: string
   readonly type?: VoiceTaskEventType
   readonly detail?: string
   readonly voiceHint?: string
@@ -41,13 +41,15 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
     order: VOICE_MESSAGE_SECTION_ORDER,
     text: 'When a user message contains a <realtime_delegation> request or <realtime_delegation_update>, '
       + 'use send_voice_message with its delegation_id to keep the realtime voice assistant informed. '
-      + 'Report structured events with type, detail, and voice_hint. Use progress for meaningful progress, '
+      + 'Report structured events with type and detail. Use progress for meaningful progress, '
       + 'warning or error for important conditions, question when user input is required, and result exactly '
-      + 'once before a successful final turn ends. detail stays in the task trace; voice_hint is the natural '
-      + 'conversational text shown in the Voice window and spoken aloud. Lead with the conclusion and adapt detail to the request: brief for simple outcomes, '
-      + 'longer when complexity or the user requires it. Do not impose a character limit. Do not recite '
-      + 'Markdown structure, code blocks, logs, command output, or exhaustive file lists; summarize those '
-      + 'for speech while leaving the full report in the task UI. The voice assistant does not automatically '
+      + 'once before a successful final turn ends. For result, put the complete factual outcome in detail and '
+      + 'omit voice_hint; the Voice layer rewrites the result against the user request. For progress, warning, '
+      + 'error, or question, voice_hint is optional and should be included only when that event should be spoken '
+      + 'immediately. Events without voice_hint remain silent task trace entries. Keep detail complete enough '
+      + 'to support an accurate final rewrite. In voice_hint only, do not recite Markdown structure, code blocks, '
+      + 'logs, command output, or exhaustive file lists; summarize those for speech while leaving the full '
+      + 'report in the task UI. The voice assistant does not automatically '
       + 'see your transcript, tool output, or reasoning. '
       + 'A result is held until the turn actually succeeds. A question leaves the task waiting for a user reply. '
       + 'Reporting never ends your turn. Do not use '
@@ -58,9 +60,11 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
     disposeTool = agentCtx.tools.register(defineTool({
       name: 'send_voice_message',
       description: 'Send a user-facing status or final result to the realtime voice assistant for the exact '
-        + 'active delegation using type, detail, and voice_hint. Progress, warnings, errors, and questions '
-        + 'may repeat when meaningful. result may be called once with a natural, conclusion-first spoken response whose detail adapts to the '
-        + 'request without a fixed length cap. Summarize report-only formatting, code, logs, and file lists. '
+        + 'active delegation using type and detail. Progress, warnings, errors, and questions '
+        + 'may repeat when meaningful and may include voice_hint for immediate speech. result may be called '
+        + 'once with the complete factual result in detail; omit voice_hint because the Voice layer performs '
+        + 'the final conversational rewrite. Keep detail factually complete; summarize report-only formatting, '
+        + 'code, logs, and file lists only in voice_hint. '
         + 'COMPLETE is held until the Agent turn succeeds; it does '
         + 'not finish the turn. The voice assistant does not otherwise see this Agent transcript or tool output.',
       parameters: {
@@ -72,7 +76,7 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
         type: {
           type: 'string',
           enum: ['progress', 'result', 'warning', 'error', 'question'],
-          description: 'Structured event type. Prefer this with detail and voice_hint.',
+          description: 'Structured event type. Always provide detail; voice_hint is optional.',
         },
         detail: {
           type: 'string',
@@ -80,7 +84,7 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
         },
         voice_hint: {
           type: 'string',
-          description: 'Natural spoken text shown verbatim in the Voice window and sent to TTS.',
+          description: 'Compatibility hint for immediate non-result events. Omit it for result; the Voice layer rewrites detail.',
         },
         channel: {
           type: 'string',
@@ -122,15 +126,14 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
         const type = args.type ?? (args.channel === 'COMPLETE' ? 'result' : 'progress')
         const message = (args.voice_hint ?? args.message ?? '').trim()
         const detail = (args.detail ?? args.message ?? message).trim()
-        if (message === '') throw new Error('send_voice_message message must be non-empty')
         if (detail === '') throw new Error('send_voice_message detail must be non-empty')
         return Promise.resolve(send({
           delegationId: VoiceTaskId(args.delegation_id),
           channel: type === 'result' ? 'COMPLETE' : 'STATUS',
-          message,
+          ...(message === '' ? {} : { message }),
           type,
           detail,
-          voiceHint: message,
+          ...(message === '' ? {} : { voiceHint: message }),
         }))
       },
     }))

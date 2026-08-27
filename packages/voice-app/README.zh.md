@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`dsh-voco` 的 `voice` profile patch-layer bundle。它把 provider transport 直接挂到当前来源 Session，并从持久化的 `voice/utterance-end` 事件恢复最近对话。同一来源 Session 的委派持续复用并持久绑定一个普通 Task Agent Session；`voice/agent-binding-state` 保存语音会话、后台 Agent、工作区、最后任务、最近使用时间和状态，服务重启后优先从该记录恢复，并兼容旧的 `voice/task-session-bound`。完整结果保留在任务界面，结构化事件的 `voice_hint` 承载自然口语回复。root 持有的音频在跳转期间持续运行，浏览器历史索引从侧栏展示已保存的 Voice Session。
+`dsh-voco` 的 `voice` profile patch-layer bundle。它把 provider transport 直接挂到当前来源 Session，并从持久化的 `voice/utterance-end` 事件恢复最近对话。同一来源 Session 的委派持续复用并持久绑定一个普通 Task Agent Session；`voice/agent-binding-state` 保存语音会话、后台 Agent、工作区、最后任务、最近使用时间和状态，服务重启后优先从该记录恢复，并兼容旧的 `voice/task-session-bound`。完整结果保留在任务界面；独立模型结合用户原话重写最终结果，并把同一份口语化句子流送入语音窗口和 TTS。阶段事件仍可用可选的 `voice_hint` 即时播报。root 持有的音频在跳转期间持续运行，浏览器历史索引从侧栏展示已保存的 Voice Session。
 
 ## 模型体验
 
@@ -14,7 +14,7 @@
 
 #### Token 影响
 
-已接受的委派文本、普通任务执行与后台回报调用都会消耗文本模型 token；本地 VAD、ASR、TTS 不产生按分钟的语音 API 费用。
+已接受的委派文本、普通任务执行、后台回报调用以及最终结果的辅助重写都会消耗文本模型 token；本地 VAD、ASR、TTS 不产生按分钟的语音 API 费用。
 
 #### KV Cache 影响
 

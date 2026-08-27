@@ -111,5 +111,13 @@ describe('LocalSession', () => {
       text: '第一句完成。第二句请确认。',
     })
     expect(backend.synthesize).toHaveBeenCalledWith(expect.any(String), '第一句完成。第二句请确认。')
+
+    session.appendSpeechText('独立模型重写后的第一句。')
+    session.requestResponse({ kind: 'automatic' })
+    expect(events.findLast(event => (event as { type?: string }).type === 'output_text.delta')).toMatchObject({
+      type: 'output_text.delta',
+      text: '独立模型重写后的第一句。',
+    })
+    expect(backend.synthesize).toHaveBeenLastCalledWith(expect.any(String), '独立模型重写后的第一句。')
   })
 })

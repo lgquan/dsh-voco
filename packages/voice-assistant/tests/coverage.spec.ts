@@ -66,6 +66,7 @@ interface CapturedTask {
   interactionMode: VoiceInteractionMode
   readonly taskSessionId: SessionId
   readonly messageIds: Set<string>
+  requestText: string
   agent: Agent
   taskTurn?: number
   lastAssistantMessage?: { readonly id: string; readonly text: string }
@@ -688,9 +689,10 @@ describe('voice assistant branch coverage', () => {
     await harness.dispatch('session/event', task.agent.session, turnEnd(1, 'completed'))
     expect(harness.observations.at(-1)).toMatchObject({
       status: 'completed',
-      announcement: '任务已完成。',
+      voiceHint: 'visible fallback',
+      voiceMessage: { text: 'visible fallback' },
     })
-    expect(harness.observations.at(-1)).not.toHaveProperty('voiceMessage')
+    expect(harness.observations.at(-1)).not.toHaveProperty('announcement')
     expect(harness.warnings).toHaveLength(1)
     expect(() => toolState.senders.at(-1)?.({
       delegationId: taskId,
@@ -881,7 +883,7 @@ describe('voice assistant branch coverage', () => {
       taskId,
       status: 'completed',
       type: 'result',
-      voiceHint: '迁移已经完成，并且验证通过。',
+      voiceHint: 'Migration and verification completed.',
     })
   })
 

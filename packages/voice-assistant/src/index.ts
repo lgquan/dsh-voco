@@ -102,6 +102,7 @@ interface ActiveTask {
   readonly interactionMode: VoiceInteractionMode
   readonly taskSessionId: SessionId
   readonly messageIds: Set<string>
+  requestText: string
   agent: Agent
   taskTurn?: number
   lastAssistantMessage?: VoiceTaskMessage
@@ -240,7 +241,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
   }
 
-  const rewriteAndSpeak = async (binding: Binding, taskId: VoiceTaskId, original: string): Promise<void> => {
+  const rewriteAndSpeak = async (
+    binding: Binding,
+    taskId: VoiceTaskId,
+    requestText: string,
+    original: string,
+  ): Promise<void> => {
     const llm = ctx.get('llm') as LlmRuntime | undefined
     const voiceId = binding.voiceSessionId
     if (llm === undefined || voiceId === undefined || !binding.voiceAttached) return
@@ -250,11 +256,17 @@ export function apply(ctx: Context, config: Config = {}): void {
     binding.rewriteAbort = abort
     const selection = ctx.agentDefaultModel.currentSelection()
     const prompt = [
-      '请把下面的 Agent 工作结果改写成自然、简洁、口语化的中文语音回复。',
+      '请根据用户原话，把下面的 Agent 工作结果重写成自然、准确、口语化的中文回复。',
       '只输出要朗读的内容，不要 Markdown、表格、代码、链接或项目符号。',
-      '保留关键结论、完成情况和必要的下一步；不要虚构信息。',
-      '如果内容很长，优先概括，详细结果已经显示在屏幕上。',
+      '忠实保留事实、结论、完成情况和必要的下一步，不要添加原结果中没有的信息。',
+      '回复长度按用户要求和内容复杂度自适应：简单问题简短回答，需要解释时可以较长，不要为了简短遗漏必要内容。',
+      '代码、表格、日志和冗长文件清单只概括；完整技术细节保留在后台 Agent 会话。',
+      '文件名、扩展名、路径和英文缩写要按自然中文表达。不要说“点MD”这类机械读法；例如“免费.md”可说成“名为免费的 Markdown 文档”。',
       '',
+      '用户原话：',
+      requestText,
+      '',
+      'Agent 工作结果：',
       original,
     ].join('\n')
     const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'plugin', plugin: 'voice-assistant' } })
@@ -266,8 +278,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         model: selection.model,
         ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
         messages: [message],
-        system: '你是语音回复改写器。输出短句，像自然对话一样。',
-        maxTokens: 512,
+        system: '你是忠实的语音回复编辑器。保持事实不变，用适合直接朗读的自然中文回答用户。',
         signal: abort.signal,
       })) {
         if (generation !== binding.rewriteGeneration || abort.signal.aborted) return
@@ -334,19 +345,23 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     if (task.cancelling) throw new Error(`voice delegation "${task.id}" is being cancelled`)
     const type = input.type ?? (input.channel === 'COMPLETE' ? 'result' : 'progress')
-    const detail = input.detail ?? input.message
+    const detail = input.detail ?? input.message ?? input.voiceHint
+    if (detail === undefined || detail.trim() === '') throw new Error('voice message detail must be non-empty')
     const voiceHint = input.voiceHint ?? input.message
-    const message = { id: VoiceTaskMessageId(randomUUID()), text: voiceHint }
+    const messageId = VoiceTaskMessageId(randomUUID())
+    const message = voiceHint === undefined || voiceHint.trim() === ''
+      ? undefined
+      : { id: messageId, text: voiceHint }
     if (type === 'result') {
-      if (task.completionMessage !== undefined) {
+      if (task.completionDetail !== undefined) {
         throw new Error(`voice delegation "${task.id}" already has a COMPLETE message`)
       }
-      task.completionMessage = message
+      if (message !== undefined) task.completionMessage = message
       task.completionDetail = detail
       task.waitingUser = false
-      return { messageId: message.id, delivery: 'held_until_turn_end' }
+      return { messageId, delivery: 'held_until_turn_end' }
     }
-    if (task.completionMessage !== undefined) {
+    if (task.completionDetail !== undefined) {
       throw new Error(`voice delegation "${task.id}" already has a COMPLETE message`)
     }
     append(binding, {
@@ -356,11 +371,10 @@ export function apply(ctx: Context, config: Config = {}): void {
       channel: 'STATUS',
       type,
       detail,
-      voiceHint,
-      voiceMessage: message,
-    }, true)
+      ...(message === undefined ? {} : { voiceHint: message.text, voiceMessage: message }),
+    }, message !== undefined)
     if (type === 'question') task.waitingUser = true
-    return { messageId: message.id, delivery: 'queued' }
+    return { messageId, delivery: 'queued' }
   }
 
   const ensureAgent = async (binding: Binding): Promise<Agent> => {
@@ -610,6 +624,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const onTranscription = async (binding: Binding, text: string): Promise<void> => {
     const trimmed = text.trim()
     if (trimmed === '') return
+    cancelRewrite(binding)
     const agent = await ensureAgent(binding)
     const message = createUserMessage({ content: [{ type: 'text', text: trimmed }], source: { kind: 'user' as const } })
     if (binding.active === undefined) {
@@ -618,6 +633,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         interactionMode: 'speech-shell',
         taskSessionId: binding.sessionId,
         messageIds: new Set([message.id]),
+        requestText: trimmed,
         agent,
         cancelling: false,
         waitingUser: false,
@@ -654,6 +670,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           complete({ kind: 'rejected', code: 'task_active', message: `task "${binding.active.id}" is still active` })
           return
         }
+        cancelRewrite(binding)
         const taskId = VoiceTaskId(randomUUID())
         const continuous = (config.taskSessionPolicy ?? 'isolated') === 'continuous'
         let created: Awaited<ReturnType<typeof createTaskAgent>> & { readonly taskSessionId: SessionId }
@@ -674,6 +691,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           interactionMode: 'frontend-agent',
           taskSessionId: created.taskSessionId,
           messageIds: new Set([message.id]),
+          requestText: call.command.input,
           agent: created.agent,
           ...(continuous ? {} : { disposeVoiceMessage: created.disposeVoiceMessage }),
           cancelling: false,
@@ -719,7 +737,9 @@ export function apply(ctx: Context, config: Config = {}): void {
           content: [{ type: 'text', text: renderRealtimeDelegationUpdate(task.id, call.command.message) }],
           source: { kind: 'plugin', plugin: 'voice-assistant' },
         })
+        const previousRequestText = task.requestText
         task.messageIds.add(message.id)
+        task.requestText += `\n补充要求：${call.command.message}`
         const waitingForReply = task.waitingUser && task.taskTurn === undefined
         task.waitingUser = false
         try {
@@ -727,10 +747,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           else task.agent.steer(message)
         } catch (error) {
           task.messageIds.delete(message.id)
+          task.requestText = previousRequestText
           task.waitingUser = waitingForReply
           backendUnavailable(error)
           return
         }
+        cancelRewrite(binding)
         complete({ kind: 'accepted', taskId: task.id })
         append(binding, {
           taskId: task.id,
@@ -894,7 +916,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (deliverAssistantSpeech) {
           ctx.voice.requestResponse(binding.voiceSessionId!, { kind: 'automatic' })
         } else {
-          void rewriteAndSpeak(binding, task.id, text)
+          void rewriteAndSpeak(binding, task.id, task.requestText, text)
         }
       }, deliverAssistantSpeech)) {
         if ((config.taskSessionPolicy ?? 'isolated') === 'isolated') taskBindings.delete(session.id)
@@ -1023,16 +1045,23 @@ function observeSessionEvent(
   }
   if (event.type !== 'turn/end' || event.data.turn !== task.taskTurn) return false
   const status = terminalStatus(event.data.reason.kind)
-  if (status === 'completed' && task.waitingUser && task.completionMessage === undefined) {
+  if (status === 'completed' && task.waitingUser && task.completionDetail === undefined) {
     delete task.taskTurn
     delete task.lastAssistantMessage
     return false
   }
-  const message = status === 'completed' && task.interactionMode === 'frontend-agent'
-    ? task.completionMessage
+  const resultText = status === 'completed' && task.interactionMode === 'frontend-agent'
+    ? task.completionDetail ?? task.lastAssistantMessage?.text
     : undefined
+  const rewriteFinalResult = resultText !== undefined && !deliverAssistantSpeech
+  const directText = rewriteFinalResult
+    ? undefined
+    : resultText === undefined ? undefined : fallbackSpeechText(resultText)
+  const message = directText === undefined || directText === ''
+    ? undefined
+    : { id: task.completionMessage?.id ?? VoiceTaskMessageId(randomUUID()), text: directText }
   const hasCompletedOutput = task.interactionMode === 'frontend-agent'
-    ? message !== undefined
+    ? resultText !== undefined
     : task.lastAssistantMessage !== undefined
   const announcement = status === 'completed'
     ? hasCompletedOutput ? undefined : config.completedAnnouncement ?? '任务已完成。'
@@ -1043,16 +1072,19 @@ function observeSessionEvent(
     taskId: task.id,
     status,
     taskTurn: task.taskTurn,
-    ...(message === undefined ? {} : {
+    ...(resultText === undefined ? {} : {
       channel: 'COMPLETE' as const,
       type: 'result' as const,
-      detail: task.completionDetail ?? message.text,
+      detail: resultText,
+    }),
+    ...(message === undefined ? {} : {
       voiceHint: message.text,
       voiceMessage: message,
     }),
     ...(announcement === undefined ? {} : { announcement }),
     ...(status === 'failed' ? { reason: event.data.reason.kind } : {}),
-  }, task.interactionMode === 'frontend-agent' || announcement !== undefined)
+  }, message !== undefined || announcement !== undefined, true)
+  if (rewriteFinalResult) rewrite(task, resultText)
   const disposeVoiceMessage = task.disposeVoiceMessage
   delete task.disposeVoiceMessage
   binding.lastTerminalTaskId = task.id

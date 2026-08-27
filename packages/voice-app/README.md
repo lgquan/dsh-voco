@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-The `dsh-voco` patch-layer bundle attaches provider transport directly to the current source Session and restores recent conversation from durable `voice/utterance-end` events. Delegations from one source Session continuously reuse one ordinary task Agent Session. `voice/agent-binding-state` persists the Voice conversation, background Agent, workspace, last task, last-used time, and status; restart recovery prefers that complete record while remaining compatible with `voice/task-session-bound`. Full results remain in the task UI while structured-event `voice_hint` text carries the conversational spoken response. Root-owned audio continues across navigation, and the browser history index exposes saved Voice Sessions in the sidebar.
+The `dsh-voco` patch-layer bundle attaches provider transport directly to the current source Session and restores recent conversation from durable `voice/utterance-end` events. Delegations from one source Session continuously reuse one ordinary task Agent Session. `voice/agent-binding-state` persists the Voice conversation, background Agent, workspace, last task, last-used time, and status; restart recovery prefers that complete record while remaining compatible with `voice/task-session-bound`. Full results remain in the task UI, while an independent model rewrites final result detail against the original request and streams the same conversational sentences to the Voice window and TTS. Optional stage-event `voice_hint` text still supports immediate progress speech. Root-owned audio continues across navigation, and the browser history index exposes saved Voice Sessions in the sidebar.
 
 ## Model Experience
 
@@ -14,7 +14,7 @@ Voice-initiated work reaches the source Session's fixed background task Agent on
 
 #### Token effect
 
-Accepted delegation text, ordinary task work, and backend reporting calls consume text-model tokens; local VAD, ASR, and TTS add no per-minute voice API charge.
+Accepted delegation text, ordinary task work, backend reporting calls, and the auxiliary final-result rewrite consume text-model tokens; local VAD, ASR, and TTS add no per-minute voice API charge.
 
 #### KV Cache effect
 
