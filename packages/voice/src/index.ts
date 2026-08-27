@@ -225,6 +225,19 @@ export class VoiceRuntime extends Service {
     this.publish(live, { type: 'task.observation', observation: event })
   }
 
+  /** Queue one already-rewritten speech fragment for the attached provider. */
+  appendSpeechText(id: VoiceSessionId, text: string): boolean {
+    const provider = this.requireAttachedSession(id).provider
+    if (provider.appendSpeechText === undefined) return false
+    provider.appendSpeechText(text)
+    return true
+  }
+
+  /** Whether the attached provider supports independent speech fragments. */
+  supportsSpeechText(id: VoiceSessionId): boolean {
+    return this.requireAttachedSession(id).provider.appendSpeechText !== undefined
+  }
+
   /**
    * Ask the provider to speak pending observations.
    * @param id - voice session.

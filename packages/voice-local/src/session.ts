@@ -21,6 +21,7 @@ export class LocalSession implements VoiceProviderSession {
   readonly audio
   private closed = false
   private readonly pending: string[] = []
+  private readonly pendingSpeech: string[] = []
   private activeResponseId: VoiceResponseId | undefined
 
   constructor(
@@ -37,6 +38,7 @@ export class LocalSession implements VoiceProviderSession {
   interruptResponse(): void {
     const responseId = this.activeResponseId
     this.backend.interrupt()
+    this.pendingSpeech.splice(0)
     this.activeResponseId = undefined
     this.emit({ type: 'response.interrupted', ...(responseId === undefined ? {} : { responseId }) })
   }
@@ -47,8 +49,13 @@ export class LocalSession implements VoiceProviderSession {
     if (text !== undefined && text !== '') this.pending.push(text)
   }
 
+  appendSpeechText(text: string): void {
+    const trimmed = text.trim()
+    if (trimmed !== '') this.pendingSpeech.push(trimmed)
+  }
+
   requestResponse(_policy: VoiceResponsePolicy): void {
-    const text = this.pending.splice(0).join('\n')
+    const text = [...this.pending.splice(0), ...this.pendingSpeech.splice(0)].join('\n')
     if (text === '') return
     const responseId = VoiceResponseId(String(this.voiceSessionId) + ':response:' + randomUUID())
     this.activeResponseId = responseId

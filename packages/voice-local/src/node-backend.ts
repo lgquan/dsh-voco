@@ -76,7 +76,9 @@ export class NodeSpeechBackend implements SpeechBackend {
   }
 
   synthesize(responseId: string, text: string): void {
-    const generation = ++this.synthesisGeneration
+    // Each fragment is queued in order. `interrupt()` advances the generation
+    // and invalidates every fragment that has not started yet.
+    const generation = this.synthesisGeneration
     this.synthesisQueue = this.synthesisQueue.catch(() => {}).then(async () => {
       if (generation !== this.synthesisGeneration || this.closed) return
       this.emit?.({ type: 'tts.started', responseId })

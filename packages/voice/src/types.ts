@@ -212,6 +212,8 @@ export interface VoiceProviderSession {
   interruptResponse(): void
   playbackEnded(): void
   appendTaskObservation(event: TaskObservation): void
+  /** Queue plain speech text without persisting it as a task observation. */
+  appendSpeechText?(text: string): void
   requestResponse(policy: VoiceResponsePolicy): void
   completeTaskCommand(callId: VoiceCommandCallId, result: TaskCommandResult): void
   close(): Promise<void>

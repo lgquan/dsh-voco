@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import { foldRequestHeader, KNOWN_SESSION_EVENT_TYPES, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -103,6 +103,8 @@ interface Binding {
   readonly pending: TaskObservation[]
   readonly utterances: Map<VoiceUtteranceId, OpenUtterance>
   chain: Promise<void>
+  rewriteGeneration: number
+  rewriteAbort: AbortController | undefined
 }
 
 /** Install the driver. @param ctx - composed Agent and voice context. @param config - driver copy and queue bounds. */
@@ -139,7 +141,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const bindingFor = (sessionId: SessionId): Binding => {
     let binding = bindings.get(sessionId)
     if (binding === undefined) {
-      binding = {
+      const created: Binding = {
         sessionId,
         voiceSessionId: undefined,
         interactionMode: undefined,
@@ -151,13 +153,16 @@ export function apply(ctx: Context, config: Config = {}): void {
         pending: [],
         utterances: new Map(),
         chain: Promise.resolve(),
+        rewriteGeneration: 0,
+        rewriteAbort: undefined,
       }
-      bindings.set(sessionId, binding)
+      bindings.set(sessionId, created)
+      return created
     }
     return binding
   }
 
-  const append = (binding: Binding, observation: TaskObservation, speak: boolean): void => {
+  const append = (binding: Binding, observation: TaskObservation, speak: boolean, deliver = true): void => {
     const session = ctx.sessions.get(binding.sessionId)
     if (session === undefined) {
       throw new Error(`voice-assistant: Agent session "${binding.sessionId}" is not live`)
@@ -165,12 +170,93 @@ export function apply(ctx: Context, config: Config = {}): void {
     session.append('voice/task-observation', observation)
     const voiceId = binding.voiceSessionId
     if (voiceId === undefined || !binding.voiceAttached) {
-      binding.pending.push(observation)
+      if (deliver) binding.pending.push(observation)
       if (binding.pending.length > maxPending) binding.pending.splice(0, binding.pending.length - maxPending)
       return
     }
+    if (!deliver) return
     ctx.voice.appendTaskObservation(voiceId, observation)
     if (speak) ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
+  }
+
+  const cancelRewrite = (binding: Binding): void => {
+    binding.rewriteGeneration += 1
+    binding.rewriteAbort?.abort()
+    binding.rewriteAbort = undefined
+  }
+
+  const speakFragment = (binding: Binding, taskId: VoiceTaskId, text: string): void => {
+    const voiceId = binding.voiceSessionId
+    if (voiceId === undefined || !binding.voiceAttached || text.trim() === '') return
+    if (ctx.voice.appendSpeechText(voiceId, text)) {
+      ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
+      return
+    }
+    // Providers without the optional streaming face still receive a usable
+    // response through the original observation protocol.
+    ctx.voice.appendTaskObservation(voiceId, {
+      taskId,
+      status: 'running',
+      voiceMessage: { id: VoiceTaskMessageId(randomUUID()), text },
+    })
+    ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
+  }
+
+  const rewriteAndSpeak = async (binding: Binding, taskId: VoiceTaskId, original: string): Promise<void> => {
+    const llm = ctx.get('llm') as LlmRuntime | undefined
+    const voiceId = binding.voiceSessionId
+    if (llm === undefined || voiceId === undefined || !binding.voiceAttached) return
+    cancelRewrite(binding)
+    const generation = binding.rewriteGeneration
+    const abort = new AbortController()
+    binding.rewriteAbort = abort
+    const selection = ctx.agentDefaultModel.currentSelection()
+    const prompt = [
+      '请把下面的 Agent 工作结果改写成自然、简洁、口语化的中文语音回复。',
+      '只输出要朗读的内容，不要 Markdown、表格、代码、链接或项目符号。',
+      '保留关键结论、完成情况和必要的下一步；不要虚构信息。',
+      '如果内容很长，优先概括，详细结果已经显示在屏幕上。',
+      '',
+      original,
+    ].join('\n')
+    const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'plugin', plugin: 'voice-assistant' } })
+    let buffer = ''
+    let emitted = false
+    try {
+      for await (const chunk of llm.stream({
+        provider: selection.provider,
+        model: selection.model,
+        ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+        messages: [message],
+        system: '你是语音回复改写器。输出短句，像自然对话一样。',
+        maxTokens: 512,
+        signal: abort.signal,
+      })) {
+        if (generation !== binding.rewriteGeneration || abort.signal.aborted) return
+        if (chunk.type !== 'text-delta') continue
+        buffer += chunk.text
+        const split = speechFragments(buffer, false)
+        buffer = split.rest
+        for (const fragment of split.fragments) {
+          emitted = true
+          speakFragment(binding, taskId, fragment)
+        }
+      }
+      const final = speechFragments(buffer, true)
+      if (final.rest.trim() !== '') final.fragments.push(final.rest.trim())
+      for (const fragment of final.fragments) {
+        emitted = true
+        speakFragment(binding, taskId, fragment)
+      }
+      if (!emitted) speakFragment(binding, taskId, fallbackSpeechText(original))
+    } catch (error: unknown) {
+      if (!abort.signal.aborted && generation === binding.rewriteGeneration) {
+        ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+        speakFragment(binding, taskId, fallbackSpeechText(original))
+      }
+    } finally {
+      if (binding.rewriteAbort === abort) binding.rewriteAbort = undefined
+    }
   }
 
   const enqueue = (binding: Binding, operation: () => Promise<void> | void): void => {
@@ -608,6 +694,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const binding = bindings.get(session.agentSessionId)
     if (binding?.voiceSessionId !== session.id) return
     binding.voiceAttached = false
+    cancelRewrite(binding)
     enqueue(binding, () => { interruptAllUtterances(binding) })
   })
 
@@ -617,6 +704,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     binding.voiceSessionId = undefined
     binding.interactionMode = undefined
     binding.voiceAttached = false
+    cancelRewrite(binding)
     enqueue(binding, () => { interruptAllUtterances(binding) })
   })
 
@@ -690,10 +778,19 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.on('session/event', (session, event) => {
     const binding = taskBindings.get(session.id)
     if (binding === undefined) return
+    let hasLlm = false
+    try { hasLlm = ctx.get('llm') !== undefined } catch { hasLlm = false }
+    const deliverAssistantSpeech = !hasLlm || !ctx.voice.supportsSpeechText(binding.voiceSessionId!)
     enqueue(binding, () => {
       if (observeSessionEvent(binding, event, append, config, (error) => {
         ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
-      })) {
+      }, (task, text) => {
+        if (deliverAssistantSpeech) {
+          ctx.voice.requestResponse(binding.voiceSessionId!, { kind: 'automatic' })
+        } else {
+          void rewriteAndSpeak(binding, task.id, text)
+        }
+      }, deliverAssistantSpeech)) {
         if ((config.taskSessionPolicy ?? 'isolated') === 'isolated') taskBindings.delete(session.id)
       }
     })
@@ -736,12 +833,44 @@ function isTerminalObservation(observation: TaskObservation): boolean {
     || observation.status === 'cancelled'
 }
 
+function speechFragments(text: string, flush: boolean): { fragments: string[]; rest: string } {
+  const fragments: string[] = []
+  let rest = text
+  while (true) {
+    const match = /[。！？!?；;]/u.exec(rest)
+    if (match === null || match.index === undefined) break
+    const end = match.index + match[0].length
+    fragments.push(rest.slice(0, end).trim())
+    rest = rest.slice(end)
+  }
+  if (!flush && rest.length >= 36) {
+    const comma = Math.max(rest.lastIndexOf('，', 36), rest.lastIndexOf(',', 36))
+    if (comma >= 12) {
+      fragments.push(rest.slice(0, comma + 1).trim())
+      rest = rest.slice(comma + 1)
+    }
+  }
+  return { fragments: fragments.filter(Boolean), rest }
+}
+
+function fallbackSpeechText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/gu, '详细代码已经显示在屏幕上。')
+    .replace(/\|[^\n]+\|/gu, ' ')
+    .replace(/!?(?:\[[^\]]*\])?\([^)]*\)/gu, ' ')
+    .replace(/[#>*_`~-]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
 function observeSessionEvent(
   binding: Binding,
   event: SessionEvent,
-  append: (binding: Binding, observation: TaskObservation, speak: boolean) => void,
+  append: (binding: Binding, observation: TaskObservation, speak: boolean, deliver?: boolean) => void,
   config: Config,
   onDisposeError: (error: unknown) => void,
+  rewrite: (task: ActiveTask, text: string) => void,
+  deliverAssistantSpeech: boolean,
 ): boolean {
   const task = binding.active
   if (task === undefined || task.taskTurn === undefined) return false
@@ -751,7 +880,8 @@ function observeSessionEvent(
       const message = { id: VoiceTaskMessageId(event.data.message.id), text }
       task.lastAssistantMessage = message
       if (task.interactionMode === 'speech-shell') {
-        append(binding, { taskId: task.id, status: 'running', taskTurn: task.taskTurn, voiceMessage: message }, true)
+        append(binding, { taskId: task.id, status: 'running', taskTurn: task.taskTurn, voiceMessage: message }, false, deliverAssistantSpeech)
+        rewrite(task, text)
       }
     }
     return false
