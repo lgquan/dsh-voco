@@ -23,8 +23,12 @@ export class LocalSession implements VoiceProviderSession {
   private readonly pending: string[] = []
   private readonly pendingSpeech: string[] = []
   private readonly pendingCommands = new Map<VoiceCommandCallId, TaskCommand>()
+  private readonly pendingOutputs: Array<{
+    readonly responseId: VoiceResponseId
+    readonly utteranceId: VoiceUtteranceId
+    readonly text: string
+  }> = []
   private activeTaskId: VoiceTaskId | undefined
-  private activeResponseId: VoiceResponseId | undefined
 
   constructor(
     private readonly backend: SpeechBackend,
@@ -40,13 +44,21 @@ export class LocalSession implements VoiceProviderSession {
   appendAudio(audio: Uint8Array): void { this.backend.appendAudio(audio) }
   commitAudio(): void { this.backend.commitAudio() }
   interruptResponse(): void {
-    const responseId = this.activeResponseId
     this.backend.interrupt()
     this.pendingSpeech.splice(0)
-    this.activeResponseId = undefined
-    this.emit({ type: 'response.interrupted', ...(responseId === undefined ? {} : { responseId }) })
+    this.pendingOutputs.splice(0)
+    this.emit({ type: 'response.interrupted' })
   }
-  playbackEnded(): void {}
+  playbackEnded(): void {
+    for (const output of this.pendingOutputs.splice(0)) {
+      this.emit({
+        type: 'output_text.done',
+        utteranceId: output.utteranceId,
+        responseId: output.responseId,
+        text: output.text,
+      })
+    }
+  }
 
   appendTaskObservation(event: TaskObservation): void {
     const text = event.voiceMessage?.text.trim() || event.announcement?.trim()
@@ -66,10 +78,9 @@ export class LocalSession implements VoiceProviderSession {
     if (text === '') return
     const responseId = VoiceResponseId(String(this.voiceSessionId) + ':response:' + randomUUID())
     const utteranceId = VoiceUtteranceId(String(responseId) + ':text')
-    this.activeResponseId = responseId
+    this.pendingOutputs.push({ responseId, utteranceId, text })
     this.emit({ type: 'output_text.started', utteranceId, responseId })
     this.emit({ type: 'output_text.delta', utteranceId, responseId, text })
-    this.emit({ type: 'output_text.done', utteranceId, responseId, text })
     this.backend.synthesize(String(responseId), text)
   }
 
@@ -113,7 +124,6 @@ export class LocalSession implements VoiceProviderSession {
       case 'transcription.failed': this.emit({ type: 'transcription.failed', utteranceId: VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId), message: event.message }); return
       case 'tts.started': {
         const responseId = this.responseId(event.responseId)
-        this.activeResponseId = responseId
         this.emit({ type: 'output_audio.started', responseId })
         return
       }
@@ -121,7 +131,6 @@ export class LocalSession implements VoiceProviderSession {
       case 'tts.done': {
         const responseId = this.responseId(event.responseId)
         this.emit({ type: 'output_audio.done', responseId })
-        if (this.activeResponseId === responseId) this.activeResponseId = undefined
         return
       }
       case 'error': this.emit({ type: 'error', message: event.message }); return

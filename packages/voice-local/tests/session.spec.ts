@@ -33,6 +33,7 @@ describe('LocalSession', () => {
     backend.emit?.({ type: 'tts.started', responseId })
     backend.emit?.({ type: 'tts.delta', responseId, audio: new Uint8Array([1, 2]) })
     backend.emit?.({ type: 'tts.done', responseId })
+    session.playbackEnded()
 
     expect(backend.start).toHaveBeenCalledTimes(1)
     expect(backend.synthesize).toHaveBeenCalledWith(expect.stringMatching(/^voice-local-test:response:/), '已经完成。')
@@ -103,6 +104,8 @@ describe('LocalSession', () => {
     })
     session.requestResponse({ kind: 'automatic' })
 
+    expect(events.find(event => (event as { type?: string }).type === 'output_text.done')).toBeUndefined()
+    session.playbackEnded()
     expect(events.find(event => (event as { type?: string }).type === 'output_text.done')).toMatchObject({
       type: 'output_text.done',
       text: '第一句完成。第二句请确认。',
