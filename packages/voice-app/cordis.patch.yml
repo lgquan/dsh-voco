@@ -27,6 +27,7 @@
         completedAnnouncement: 任务已完成。
         failedAnnouncement: 任务失败了，请查看屏幕上的错误信息。
         cancelledAnnouncement: 任务已取消。
+        interruptedAnnouncement: 上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。
 
     - id: voice-web
       name: '@lgquan/dsh-voice-web'

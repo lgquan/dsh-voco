@@ -882,7 +882,30 @@ describe('voice assistant branch coverage', () => {
       event.type === 'voice/task-observation' && event.data.taskId === taskId
         ? [event.data]
         : []
-    )).at(-1)).toMatchObject({ taskId, status: 'interrupted' })
+    )).at(-1)).toMatchObject({
+      taskId,
+      status: 'interrupted',
+      announcement: '上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。',
+    })
+  })
+
+  it('announces the latest interrupted task without replaying it after restart', async () => {
+    const harness = makeHarness({ taskSessionPolicy: 'continuous' })
+    const sourceId = SessionId('interrupted-recovery-source')
+    const source = harness.makeSession(sourceId)
+    const taskId = VoiceTaskId('interrupted-task')
+    source.append('voice/task-observation', {
+      taskId,
+      status: 'interrupted',
+      announcement: '上次任务已中断，没有自动重放。',
+      reason: 'service stopped',
+    })
+
+    await harness.open(sourceId, 'frontend-agent')
+    expect(harness.observations.at(-1)).toMatchObject({ taskId, status: 'interrupted' })
+    expect(harness.bindings.get(sourceId)?.active).toBeUndefined()
+    expect(harness.created).toHaveLength(0)
+    expect(harness.ctx.voice.requestResponse).toHaveBeenCalledTimes(1)
   })
 
   it('uses default model and announcement fallbacks when no header or preset exists', async () => {

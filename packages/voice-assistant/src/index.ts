@@ -45,6 +45,8 @@ export interface Config {
   readonly failedAnnouncement?: string
   /** Spoken announcement for a cancelled task. */
   readonly cancelledAnnouncement?: string
+  /** Spoken announcement restored after service shutdown interrupted a task. */
+  readonly interruptedAnnouncement?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -55,6 +57,7 @@ export const Config: z<Config> = z.object({
   completedAnnouncement: z.string().default('任务已完成。'),
   failedAnnouncement: z.string().default('任务失败了，请查看屏幕上的错误信息。'),
   cancelledAnnouncement: z.string().default('任务已取消。'),
+  interruptedAnnouncement: z.string().default('上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。'),
 })
 
 /** Plugin-owned durable session event types, registered with core at load. */
@@ -894,6 +897,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             taskId: task.id,
             status: 'interrupted',
             ...(task.taskTurn === undefined ? {} : { taskTurn: task.taskTurn }),
+            announcement: config.interruptedAnnouncement ?? '上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。',
             reason: 'voice-assistant service stopped before the task finished',
           }, false, false)
           binding.lastTerminalTaskId = task.id
