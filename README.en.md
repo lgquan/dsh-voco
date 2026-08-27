@@ -11,8 +11,8 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 - **Real-time voice conversation**: browser audio uses local Silero VAD and streaming Paraformer ONNX, while replies use Edge TTS's Chinese Xiaoxiao voice with interruption support.
 - **Conversational delegation**: the frontend exposes exactly three orchestration tools — `realtime_delegation` (turn "check this for me" into a real background task), `send_task_message` (add or correct requirements), and `cancel_task`.
 - **Continuous task context**: sequential delegations reuse one background Agent Session while retaining distinct delegation ids.
-- **Asynchronous result backfill**: progress (STATUS) and a spoken result (COMPLETE) flow back into the voice conversation, with adaptive detail and no fixed character cap.
-- **Recoverable conversation memory**: restarting voice or DSH restores recent completed user and assistant utterances from the source Session.
+- **Structured result backfill**: the background Agent reports `progress | result | warning | error | question` events. The exact `voiceHint` text enters the Voice window and TTS, while full detail remains in the background task UI.
+- **Recoverable two-session memory**: restarting voice or DSH restores recent source-Session conversation and its fixed background Agent Session binding. An interrupted task reports its last spoken progress but is never replayed automatically.
 - **Uninterrupted flow**: switching browser tabs or reconnecting never stops the live voice session or the task behind it.
 
 ## Install

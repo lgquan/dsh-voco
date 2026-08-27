@@ -11,8 +11,8 @@
 - **实时语音对话**：浏览器采集音频，经本地 Silero VAD、流式 Paraformer ONNX 识别，回复使用 Edge TTS 的 Xiaoxiao 中文音色，支持边说边听和打断。
 - **对话式派活**：前端只暴露三个编排工具——`realtime_delegation`（把「帮我查一下 xxx」变成真正的后台任务）、`send_task_message`（补充要求 / 纠正方向）、`cancel_task`（取消）。
 - **连续任务上下文**：同一语音会话的多次委派复用一个后台 Agent Session，每次任务仍有独立 delegation id。
-- **异步结果回灌**：进度（STATUS）和口语结果（COMPLETE）会回灌进语音对话；回复按问题复杂度自适应详略，不设固定字数上限。
-- **可恢复的对话记忆**：停止再启动语音或重启 DSH 后，从源 Session 恢复最近完成的用户与助手话语。
+- **结构化结果回灌**：后台 Agent 用 `progress | result | warning | error | question` 事件回报；`voiceHint` 的同一份文本进入语音窗口并送往 TTS，完整细节只留在后台任务界面。
+- **可恢复的双会话记忆**：停止再启动语音或重启 DSH 后，会恢复来源 Session 的最近对话及其固定后台 Agent Session 绑定；中断任务会告知上次进度，但不会自动重放。
 - **不中断的体验**：浏览器切走、断线重连，正在跑的语音会话和后台任务都不会停。
 
 ## 安装
