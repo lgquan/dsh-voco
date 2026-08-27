@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`dsh-live` 的 `voice` profile patch-layer bundle。它把 provider transport 直接挂到当前来源 Session，并从持久化的 `voice/utterance-end` 事件恢复最近对话。同一来源 Session 的委派持续复用一个普通 Task Agent Session；完整结果保留在任务界面，`COMPLETE` 只承载自适应详略的自然口语回复。root 持有的音频在跳转期间持续运行，浏览器历史索引从侧栏展示已保存的 Voice Session。
+`dsh-vox` 的 `voice` profile patch-layer bundle。它把 provider transport 直接挂到当前来源 Session，并从持久化的 `voice/utterance-end` 事件恢复最近对话。同一来源 Session 的委派持续复用一个普通 Task Agent Session；完整结果保留在任务界面，`COMPLETE` 只承载自适应详略的自然口语回复。root 持有的音频在跳转期间持续运行，浏览器历史索引从侧栏展示已保存的 Voice Session。
 
 ## 模型体验
 

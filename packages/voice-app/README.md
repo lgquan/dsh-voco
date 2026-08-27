@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-The `dsh-live` patch-layer bundle attaches provider transport directly to the current source Session and restores recent conversation from durable `voice/utterance-end` events. Delegations from one source Session continuously reuse one ordinary task Agent Session. Full results remain in the task UI while `COMPLETE` carries an adaptive, conversational spoken response. Root-owned audio continues across navigation, and the browser history index exposes saved Voice Sessions in the sidebar.
+The `dsh-vox` patch-layer bundle attaches provider transport directly to the current source Session and restores recent conversation from durable `voice/utterance-end` events. Delegations from one source Session continuously reuse one ordinary task Agent Session. Full results remain in the task UI while `COMPLETE` carries an adaptive, conversational spoken response. Root-owned audio continues across navigation, and the browser history index exposes saved Voice Sessions in the sidebar.
 
 ## Model Experience
 

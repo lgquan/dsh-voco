@@ -1,4 +1,4 @@
-# dsh-live local ONNX models
+# dsh-vox local ONNX models
 
 `setup-local-voice.mjs` is the cross-platform installation adapter for local
 speech models. It runs automatically from `pnpm install` and can also be run
