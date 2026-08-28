@@ -25,19 +25,17 @@ export function VoiceSessionMarkers({ useSessions, useVoiceHistory }: VoiceSessi
 
   useEffect(() => {
     const voiceTitles = new Set<SessionId>(history.map(entry => entry.sessionId))
-    const titles = new Set(
-      [...voiceTitles].map(id => sessions[id]?.displayTitle).filter((title): title is string => title !== undefined),
-    )
+    const sessionIds = new Set(Object.keys(sessions))
 
     let frame = 0
     const decorate = (): void => {
       frame = 0
       const rows = document.querySelectorAll<HTMLElement>('[role="treeitem"].sessionRow, [role="treeitem"][class*="sessionRow"]')
       for (const row of rows) {
-        const title = row.querySelector<HTMLElement>('[class*="title"]')?.textContent?.trim()
         const slot = row.querySelector<HTMLElement>('[class*="slot"]')
         const marker = row.querySelector<HTMLElement>('[data-voice-session-marker]')
-        const isVoice = title !== undefined && titles.has(title)
+        const sessionId = findSessionKey(row, sessionIds)
+        const isVoice = sessionId !== undefined && voiceTitles.has(sessionId as SessionId)
         if (!isVoice) {
           marker?.remove()
           continue
@@ -63,6 +61,18 @@ export function VoiceSessionMarkers({ useSessions, useVoiceHistory }: VoiceSessi
   }, [history, sessions])
 
   return null
+}
+
+/** React keeps the keyed SessionNodeItem identity on the row's owner fiber. */
+function findSessionKey(row: HTMLElement, sessionIds: Set<string>): string | undefined {
+  const fiberKey = Object.keys(row).find(key => key.startsWith('__reactFiber$'))
+  if (fiberKey === undefined) return undefined
+  let fiber = (row as unknown as Record<string, unknown>)[fiberKey] as { key: string | null; return?: unknown } | undefined
+  while (fiber !== undefined) {
+    if (fiber.key !== null && sessionIds.has(fiber.key)) return fiber.key
+    fiber = fiber.return as typeof fiber | undefined
+  }
+  return undefined
 }
 
 function createMarkerSlot(row: HTMLElement): HTMLSpanElement {
