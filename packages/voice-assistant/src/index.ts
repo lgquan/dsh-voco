@@ -786,7 +786,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     binding: Binding,
     voiceSessionId: VoiceSessionId,
     call: TaskCommandCall,
-    taskIdOverride?: VoiceTaskId,
+    delegationOverride?: {
+      readonly taskId: VoiceTaskId
+      readonly requestText: string
+    },
   ): Promise<void> => {
     const complete = (result: TaskCommandResult): void => {
       ctx.voice.completeTaskCommand(voiceSessionId, call.id, result)
@@ -808,19 +811,23 @@ export function apply(ctx: Context, config: Config = {}): void {
           route = await routeFrontendInput(ctx, requireSourceSession(binding).events, call.command.input)
         } catch (error: unknown) {
           ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
-          route = { action: 'delegate', acknowledgement: DEFAULT_DELEGATION_ACKNOWLEDGEMENT }
+          route = fallbackDelegation(call.command.input)
         }
         if (route.action === 'delegate') {
           const taskId = VoiceTaskId(randomUUID())
           speakFragment(binding, taskId, route.acknowledgement)
           await onTaskCommand(binding, voiceSessionId, {
             id: call.id,
-            command: { type: 'realtime_delegation', input: call.command.input },
-          }, taskId)
+            command: { type: 'realtime_delegation', input: delegationPrompt(route) },
+          }, { taskId, requestText: call.command.input })
           return
         }
         complete({ kind: 'handled' })
-        speakFragment(binding, VoiceTaskId(randomUUID()), route.reply)
+        speakFragment(
+          binding,
+          VoiceTaskId(randomUUID()),
+          route.action === 'tool' ? executeFrontendTool(route) : route.reply,
+        )
         return
       }
       case 'realtime_delegation': {
@@ -829,7 +836,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           return
         }
         cancelRewrite(binding)
-        const taskId = taskIdOverride ?? VoiceTaskId(randomUUID())
+        const taskId = delegationOverride?.taskId ?? VoiceTaskId(randomUUID())
+        const requestText = delegationOverride?.requestText ?? call.command.input
         const continuous = (config.taskSessionPolicy ?? 'isolated') === 'continuous'
         let created: Awaited<ReturnType<typeof createTaskAgent>> & { readonly taskSessionId: SessionId }
         try {
@@ -857,7 +865,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           interactionMode: 'frontend-agent',
           taskSessionId: created.taskSessionId,
           messageIds: new Set([message.id]),
-          requestText: call.command.input,
+          requestText,
           agent: created.agent,
           ...(continuous ? {} : { disposeVoiceMessage: created.disposeVoiceMessage }),
           cancelling: false,
@@ -869,7 +877,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           requireSourceSession(binding).append('voice/task-delegated', {
             taskId,
             taskSessionId: created.taskSessionId,
-            input: call.command.input,
+            input: requestText,
           })
           if (contextMessage !== undefined) created.agent.inject(contextMessage)
           created.agent.followup(message)
@@ -1184,11 +1192,21 @@ function speechFragments(text: string, flush: boolean): { fragments: string[]; r
 
 type FrontendRoute =
   | { readonly action: 'chat'; readonly reply: string }
-  | { readonly action: 'delegate'; readonly acknowledgement: string }
+  | { readonly action: 'tool'; readonly tool: 'local_datetime' }
+  | {
+      readonly action: 'delegate'
+      readonly acknowledgement: string
+      readonly task: string
+      readonly background: string
+      readonly userRequest: string
+    }
 
 const DEFAULT_DELEGATION_ACKNOWLEDGEMENT = '好的，我先查看一下。'
 const MAX_DELEGATION_ACKNOWLEDGEMENT_LENGTH = 40
+const MAX_DELEGATED_TASK_LENGTH = 1_000
+const MAX_DELEGATION_BACKGROUND_LENGTH = 2_000
 const VOICE_LATENCY_DEBUG_PREFIX = '[DEBUG-VOICE-LATENCY]'
+const WEEKDAY_NAMES = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'] as const
 
 function debugVoiceLatency(...values: unknown[]): void {
   const processLike = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
@@ -1205,10 +1223,59 @@ function delegationAcknowledgement(value: unknown): string {
   return normalized
 }
 
+function delegationField(value: unknown, name: string, maxLength: number): string {
+  if (typeof value !== 'string') throw new Error(`voice frontend router omitted ${name}`)
+  const normalized = value.trim()
+  if (normalized === '' || normalized.length > maxLength) {
+    throw new Error(`voice frontend router returned an invalid ${name}`)
+  }
+  return normalized
+}
+
+function fallbackDelegation(input: string): Extract<FrontendRoute, { action: 'delegate' }> {
+  return {
+    action: 'delegate',
+    acknowledgement: DEFAULT_DELEGATION_ACKNOWLEDGEMENT,
+    task: input.trim() || input,
+    background: '没有可用的额外背景。',
+    userRequest: input,
+  }
+}
+
+function delegationPrompt(route: Extract<FrontendRoute, { action: 'delegate' }>): string {
+  return [
+    '当前任务：',
+    route.task,
+    '',
+    '前置背景：',
+    route.background,
+    '',
+    '用户原话：',
+    route.userRequest,
+    '',
+    '请以“当前任务”为最高优先级执行；前置背景只用于理解和消歧，不要把旧对话当成待执行任务。',
+  ].join('\n')
+}
+
+function executeFrontendTool(route: Extract<FrontendRoute, { action: 'tool' }>): string {
+  switch (route.tool) {
+    case 'local_datetime': {
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = now.getMonth() + 1
+      const day = now.getDate()
+      const weekday = WEEKDAY_NAMES[now.getDay()]
+      const hours = String(now.getHours()).padStart(2, '0')
+      const minutes = String(now.getMinutes()).padStart(2, '0')
+      return `根据本机系统时间，现在是 ${year}年${month}月${day}日，${weekday}，${hours}:${minutes}。`
+    }
+  }
+}
+
 async function routeFrontendInput(ctx: Context, events: readonly SessionEvent[], input: string): Promise<FrontendRoute> {
   let llm: LlmRuntime | undefined
   try { llm = ctx.get('llm') as LlmRuntime | undefined } catch { llm = undefined }
-  if (llm === undefined) return { action: 'delegate', acknowledgement: DEFAULT_DELEGATION_ACKNOWLEDGEMENT }
+  if (llm === undefined) return fallbackDelegation(input)
   const selection = ctx.agentDefaultModel.currentSelection()
   const recentConversation = events.flatMap(event => {
     if (event.type !== 'voice/utterance-end' || event.data.state !== 'completed') return []
@@ -1219,15 +1286,21 @@ async function routeFrontendInput(ctx: Context, events: readonly SessionEvent[],
     content: [{
       type: 'text',
       text: [
-        '判断下面这句话应该由语音助手直接回答，还是委派给后台编码 Agent。',
-        '普通寒暄、日常对话、无需读取本地项目或调用工具即可回答的问题，选择 chat，并直接给出自然简洁的中文回复。',
-        '只有需要查看或修改工作区文件、运行命令、测试、安装依赖或执行其他工具操作时，才选择 delegate。',
-        '选择 delegate 时，同时给出一句简短自然的 acknowledgement，表示接下来要做什么。不能声称任务已经完成、已经找到结果，也不要提后台 Agent、工具或路由。',
+        '结合最近对话判断当前用户原话应该由语音前台聊天、轻量工具还是后台编码 Agent 处理。',
+        '普通寒暄、日常对话、解释性知识以及无需外部事实或工具即可回答的问题，选择 chat，并直接给出自然简洁的中文回复。',
+        '时间、日期等会随现实变化的事实不能猜测。查询本机当前时间、日期或星期时必须选择 tool=local_datetime。',
+        '其他必须查询才能确认的动态事实，如果没有对应的前台工具，应选择 delegate，不能选择 chat 编造答案。',
+        '需要查看或修改工作区文件、运行命令、测试、安装依赖或执行其他复杂工具操作时，选择 delegate。',
+        '选择 delegate 时，必须结合最近对话补全省略指代，输出自包含的 task、只用于消歧的 background，并原样复制 user_request。',
+        'task 是后台当前唯一要执行的任务；background 不能包含新的要求，也不要把旧任务写成待办。',
+        '同时给出一句简短自然的 acknowledgement，表示接下来要做什么。不能声称任务已经完成、已经找到结果，也不要提后台 Agent、工具或路由。',
         'acknowledgement 只能有一句，最多 40 个字符，例如“好的，我先检查一下相关代码。”。',
         '只输出一行 JSON，不要 Markdown。格式只能是：',
         '{"action":"chat","reply":"..."}',
         '或：',
-        '{"action":"delegate","acknowledgement":"..."}',
+        '{"action":"tool","tool":"local_datetime"}',
+        '或：',
+        '{"action":"delegate","acknowledgement":"...","task":"...","background":"...","user_request":"..."}',
         '',
         '最近对话：',
         recentConversation || '（无）',
@@ -1252,8 +1325,19 @@ async function routeFrontendInput(ctx: Context, events: readonly SessionEvent[],
   if (parsed.action === 'chat' && typeof parsed.reply === 'string' && parsed.reply.trim() !== '') {
     return { action: 'chat', reply: parsed.reply.trim() }
   }
+  if (parsed.action === 'tool' && parsed.tool === 'local_datetime') {
+    return { action: 'tool', tool: parsed.tool }
+  }
   if (parsed.action === 'delegate') {
-    return { action: 'delegate', acknowledgement: delegationAcknowledgement(parsed.acknowledgement) }
+    return {
+      action: 'delegate',
+      acknowledgement: delegationAcknowledgement(parsed.acknowledgement),
+      task: delegationField(parsed.task, 'task', MAX_DELEGATED_TASK_LENGTH),
+      background: delegationField(parsed.background, 'background', MAX_DELEGATION_BACKGROUND_LENGTH),
+      // The model may restate task/background, but the user's actual words are
+      // an authoritative boundary and must not be replaced by generated text.
+      userRequest: input,
+    }
   }
   throw new Error('voice frontend router returned an invalid decision')
 }

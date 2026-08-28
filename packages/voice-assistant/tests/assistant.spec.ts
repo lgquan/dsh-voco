@@ -82,6 +82,151 @@ function installAgentFactory(ctx: Context, configure?: (created: CreatedAgent) =
 }
 
 describe('voice assistant driver', () => {
+  it('uses a grounded local-time tool and delegates a context-resolved task', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 7, 29, 2, 55, 0))
+    try {
+      const ctx = new Context()
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(LlmRuntime)
+      const routePrompts: string[] = []
+      class RouteAdapter extends LlmAdapter {
+        async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+          const prompt = options.messages[0]?.content
+            .flatMap(block => block.type === 'text' ? [block.text] : [])
+            .join('') ?? ''
+          routePrompts.push(prompt)
+          if (prompt.includes('用户原话：现在几点？')) {
+            yield { type: 'text-delta', index: 0, text: '{"action":"tool","tool":"local_datetime"}' }
+          } else {
+            yield {
+              type: 'text-delta',
+              index: 0,
+              text: JSON.stringify({
+                action: 'delegate',
+                acknowledgement: '好的，我来核实系统时间。',
+                task: '核实当前系统时间是否准确',
+                background: '用户刚刚询问当前时间，并认为之前的回答不准确',
+                user_request: '这段内容不应覆盖真实用户原话',
+              }),
+            }
+          }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        }
+      }
+      ctx.llm.registerAdapter(['test'], new RouteAdapter())
+      const createdAgents = installAgentFactory(ctx)
+      await ctx.plugin(AgentDefaultModel, { provider: 'test', model: 'test' })
+      await ctx.plugin(SystemPrompt)
+      await ctx.plugin(ToolRuntime)
+      await ctx.plugin(VoiceRuntime, { provider: 'test' })
+
+      const displayed: string[] = []
+      const commandResults: TaskCommandResult[] = []
+      let pendingSpeech = ''
+      let emit: ((event: VoiceProviderEvent) => void) | undefined
+      const providerSession: VoiceProviderSession = {
+        audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
+        interactionMode: 'frontend-agent',
+        appendAudio: () => {}, commitAudio: () => {}, interruptResponse: () => {}, playbackEnded: () => {},
+        appendTaskObservation: () => {},
+        appendSpeechText: (text) => { pendingSpeech += text },
+        requestResponse: () => {
+          if (pendingSpeech === '') return
+          displayed.push(pendingSpeech)
+          pendingSpeech = ''
+        },
+        completeTaskCommand: (_callId, result) => { commandResults.push(result) },
+        close: () => Promise.resolve(),
+      }
+      ctx.voice.registerProvider({
+        id: 'test', available: () => true,
+        connect: (input) => { emit = input.emit; return Promise.resolve(providerSession) },
+      })
+
+      const source = ctx.sessions.create(SessionId('voice-grounded-routing'))
+      const sourceAgent = {
+        id: source.id,
+        options: { provider: 'test', model: 'test' },
+        session: source,
+        inbox: {} as Agent['inbox'],
+        status: 'idle' as const,
+        ctx,
+        cancel: vi.fn(),
+        whenIdle: () => Promise.resolve(),
+        runMaintenance: () => Promise.reject(new Error('not used')),
+        send: () => {}, steer: vi.fn(), inject: () => {}, followup: vi.fn(),
+      } satisfies Agent
+      ctx.agents.register(sourceAgent)
+      await ctx.plugin({ apply, inject }, { taskSessionPolicy: 'continuous' })
+      await ctx.voice.open(source.id)
+
+      emit?.({
+        type: 'task.command',
+        call: {
+          id: VoiceCommandCallId('route-local-time'),
+          command: { type: 'route_transcription', input: '现在几点？' },
+        },
+      })
+      await settle()
+      expect(displayed).toEqual(['根据本机系统时间，现在是 2026年8月29日，星期六，02:55。'])
+      expect(commandResults).toContainEqual({ kind: 'handled' })
+      expect(createdAgents).toHaveLength(0)
+
+      source.append('voice/utterance-end', {
+        utteranceId: VoiceUtteranceId('context-user-time'),
+        role: 'user',
+        text: '现在几点？',
+        state: 'completed',
+      })
+      source.append('voice/utterance-end', {
+        utteranceId: VoiceUtteranceId('context-assistant-time'),
+        role: 'assistant',
+        responseId: VoiceResponseId('context-time-response'),
+        text: '现在是凌晨两点五十五分。',
+        state: 'completed',
+      })
+      source.append('voice/utterance-end', {
+        utteranceId: VoiceUtteranceId('context-user-correction'),
+        role: 'user',
+        text: '这个时间不准呀。',
+        state: 'completed',
+      })
+
+      emit?.({
+        type: 'task.command',
+        call: {
+          id: VoiceCommandCallId('route-contextual-delegation'),
+          command: { type: 'route_transcription', input: '你帮我看呀。' },
+        },
+      })
+      await settle()
+
+      expect(displayed.at(-1)).toBe('好的，我来核实系统时间。')
+      expect(createdAgents).toHaveLength(1)
+      const delegated = createdAgents[0]?.followup.mock.calls[0]?.[0]
+      const block = delegated?.content[0]
+      if (block?.type !== 'text') throw new Error('contextual delegation text missing')
+      expect(block.text).toBe([
+        '当前任务：',
+        '核实当前系统时间是否准确',
+        '',
+        '前置背景：',
+        '用户刚刚询问当前时间，并认为之前的回答不准确',
+        '',
+        '用户原话：',
+        '你帮我看呀。',
+        '',
+        '请以“当前任务”为最高优先级执行；前置背景只用于理解和消歧，不要把旧对话当成待执行任务。',
+      ].join('\n'))
+      expect(block.text).not.toContain('这段内容不应覆盖真实用户原话')
+      expect(routePrompts.at(-1)).toContain('用户：这个时间不准呀。')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('binds the claimed message to its exact turn and speaks logged assistant output', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -160,12 +305,18 @@ describe('voice assistant driver', () => {
       async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
         requests.push(options)
         const prompt = options.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
-        if (prompt?.includes('判断下面这句话应该由语音助手直接回答') === true) {
+        if (prompt?.includes('结合最近对话判断当前用户原话') === true) {
           yield {
             type: 'text-delta',
             index: 0,
           text: prompt.includes('请创建免费.md')
-              ? '{"action":"delegate","acknowledgement":"好的，我先检查相关文件。"}'
+              ? JSON.stringify({
+                  action: 'delegate',
+                  acknowledgement: '好的，我先检查相关文件。',
+                  task: '创建免费.md并检查文件内容',
+                  background: '用户希望创建文件后得到验证结果',
+                  user_request: '请创建免费.md，并告诉我结果',
+                })
               : '{"action":"chat","reply":"你好，我在呢。"}',
           }
           yield { type: 'finish', reason: { kind: 'stop' } }
@@ -336,7 +487,7 @@ describe('voice assistant driver', () => {
     expect(request.system).toContain('用户感知上你就是同一个助手')
     expect(request.system).toContain('文件名、扩展名、路径和缩写应转换成自然、无歧义的口语表达')
     const routeRequest = requests.find(item => item.messages[0]?.content.some(block => (
-      block.type === 'text' && block.text.includes('判断下面这句话应该由语音助手直接回答')
+      block.type === 'text' && block.text.includes('结合最近对话判断当前用户原话')
     )))
     const routePrompt = routeRequest?.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
     expect(routePrompt).toContain('acknowledgement')
