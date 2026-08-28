@@ -10,7 +10,7 @@ Provider-neutral realtime voice capability. `ctx.voice` selects one provider, op
 
 #### What the model sees
 
-In speech-shell mode, the task model sees the transcription as an ordinary identified user message. In frontend-agent mode, a provider may emit `route_transcription` so the consumer can answer ordinary conversation directly or admit tool-requiring work as a delegation. The bound background task Agent sees only accepted `realtime_delegation` envelopes and exact-id updates associated with `VoiceTaskId` values. The task Agent alone owns the scoped backend reporting tool.
+In speech-shell mode, the task model sees the transcription as an ordinary identified user message. In frontend-agent mode, a provider may emit `route_transcription` so the consumer can answer ordinary conversation directly or admit tool-requiring work as a delegation. The bound background task Agent displays only the accepted natural-language request and follow-up requirements. The authoritative `VoiceTaskId` remains internal and is bound automatically by the Agent-scoped reporting tool, so it appears in neither the transcript nor the Session title.
 
 #### Token effect
 

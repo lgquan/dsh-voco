@@ -10,7 +10,7 @@
 
 #### 模型看到什么
 
-在 speech-shell 模式下，任务模型把转写看作普通的带标识用户消息。在 frontend-agent 模式下，provider 可以发出 `route_transcription`，由 consumer 直接回答普通对话，或把需要工具的工作接纳为委派。绑定的后台 Task Agent 只看到已接受且与 `VoiceTaskId` 关联的 `realtime_delegation` 信封与准确 id 更新；只有 Task Agent 拥有作用域内的后台回报工具。
+在 speech-shell 模式下，任务模型把转写看作普通的带标识用户消息。在 frontend-agent 模式下，provider 可以发出 `route_transcription`，由 consumer 直接回答普通对话，或把需要工具的工作接纳为委派。绑定的后台 Task Agent 只显示已接受的自然语言任务和补充要求；权威 `VoiceTaskId` 保留在插件内部，并由作用域内的后台回报工具自动绑定，既不会暴露到对话正文，也不会进入会话标题。
 
 #### Token 影响
 

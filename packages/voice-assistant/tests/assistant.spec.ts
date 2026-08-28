@@ -35,6 +35,7 @@ interface CreatedAgent {
   readonly session: ReturnType<Context['sessions']['create']>
   readonly followup: ReturnType<typeof vi.fn<(message: UserMessage) => void>>
   readonly steer: ReturnType<typeof vi.fn<(message: UserMessage) => void>>
+  readonly inject: ReturnType<typeof vi.fn<(message: UserMessage) => void>>
   readonly cancel: ReturnType<typeof vi.fn>
 }
 
@@ -47,6 +48,7 @@ function installAgentFactory(ctx: Context, configure?: (created: CreatedAgent) =
       })
       const followup = vi.fn<(message: UserMessage) => void>()
       const steer = vi.fn<(message: UserMessage) => void>()
+      const inject = vi.fn<(message: UserMessage) => void>()
       const cancel = vi.fn()
       const agent = {} as Agent
       void ownerCtx
@@ -63,13 +65,13 @@ function installAgentFactory(ctx: Context, configure?: (created: CreatedAgent) =
         runMaintenance: () => Promise.reject(new Error('not used')),
         send: () => {},
         steer,
-        inject: () => {},
+        inject,
         followup,
       } satisfies Partial<Agent>)
       const commit = await options.setup?.(agentCtx)
       commit?.commit()
       const dispose = ctx.agents.register(agent)
-      const item = { agent, session, followup, steer, cancel }
+      const item = { agent, session, followup, steer, inject, cancel }
       created.push(item)
       configure?.(item)
       return { agent, dispose: async () => { dispose() } }
@@ -275,7 +277,6 @@ describe('voice assistant driver', () => {
       callId: CallId('rewrite-progress'),
       name: 'send_voice_message',
       arguments: {
-        delegation_id: taskId,
         type: 'progress',
         detail: '正在读取 C:\\Users\\QUAN\\Desktop\\测试\\免费.md 并检查正文。',
       },
@@ -293,7 +294,6 @@ describe('voice assistant driver', () => {
       callId: CallId('rewrite-complete'),
       name: 'send_voice_message',
       arguments: {
-        delegation_id: taskId,
         type: 'result',
         detail: '已创建 C:\\Users\\QUAN\\Desktop\\测试\\免费.md，并验证文件内容正确。',
       },
@@ -446,11 +446,15 @@ describe('voice assistant driver', () => {
     expect(firstTask.followup).toHaveBeenCalledTimes(1)
     expect(firstTask.followup.mock.calls[0]?.[0].source).toEqual({ kind: 'user' })
     const delegationBlock = firstTask.followup.mock.calls[0]?.[0].content[0]
-    if (delegationBlock?.type !== 'text') throw new Error('missing delegation envelope')
-    expect(delegationBlock.text).toContain('<realtime_delegation>')
-    expect(delegationBlock.text).toContain('<input>检查仓库并报告结果</input>')
-    expect(delegationBlock.text).toContain('<transcript_delta>用户刚才说的是语音模块</transcript_delta>')
-    expect(delegationBlock.text).toContain('</realtime_delegation>')
+    if (delegationBlock?.type !== 'text') throw new Error('missing delegated task text')
+    expect(delegationBlock.text).toBe('检查仓库并报告结果')
+    expect(delegationBlock.text).not.toContain('<realtime_delegation>')
+    expect(delegationBlock.text).not.toContain('<delegation_id>')
+    expect(firstTask.inject).toHaveBeenCalledTimes(1)
+    expect(firstTask.inject.mock.calls[0]?.[0]).toMatchObject({
+      source: { kind: 'plugin', plugin: 'voice-assistant' },
+      content: [{ type: 'text', text: '语音转写补充上下文：用户刚才说的是语音模块' }],
+    })
     const accepted = completions.find(item => item.callId === 'call-start')?.result
     if (accepted?.kind !== 'accepted') throw new Error('realtime_delegation was not accepted')
     const taskId = accepted.taskId
@@ -488,7 +492,7 @@ describe('voice assistant driver', () => {
     expect(firstTask.steer.mock.calls[0]?.[0].source).toEqual({ kind: 'plugin', plugin: 'voice-assistant' })
     expect(firstTask.steer.mock.calls[0]?.[0].content).toEqual([{
       type: 'text',
-      text: `<realtime_delegation_update>\n  <delegation_id>${taskId}</delegation_id>\n  <message>只检查语音模块</message>\n</realtime_delegation_update>`,
+      text: '只检查语音模块',
     }])
 
     firstTask.session.append('turn/start', { turn: 1 })
@@ -498,21 +502,11 @@ describe('voice assistant driver', () => {
     await settle()
     expect(ctx.tools.get('send_voice_message', firstTask.agent)).toBeDefined()
 
-    const wrongDelegation = await ctx.tools.execute({
-      signal: new AbortController().signal,
-      callId: CallId('voice-wrong-delegation'),
-      name: 'send_voice_message',
-      arguments: { delegation_id: 'wrong-task', channel: 'STATUS', detail: '不应送达' },
-      agent: firstTask.agent,
-    })
-    expect(wrongDelegation).toMatchObject({ isError: true })
-
     const statusResult = await ctx.tools.execute({
       signal: new AbortController().signal,
       callId: CallId('voice-status'),
       name: 'send_voice_message',
       arguments: {
-        delegation_id: taskId,
         type: 'progress',
         detail: '正在扫描 packages/voice-assistant 的实现与测试。',
       },
@@ -535,7 +529,6 @@ describe('voice assistant driver', () => {
       callId: CallId('voice-warning-silent'),
       name: 'send_voice_message',
       arguments: {
-        delegation_id: taskId,
         type: 'warning',
         detail: '后台记录一条无需打断用户的兼容性提醒。',
       },
@@ -559,7 +552,6 @@ describe('voice assistant driver', () => {
       callId: CallId('voice-complete'),
       name: 'send_voice_message',
       arguments: {
-        delegation_id: taskId,
         type: 'result',
         detail: '语音模块检查完成，相关测试全部通过。',
       },
@@ -574,14 +566,14 @@ describe('voice assistant driver', () => {
       signal: new AbortController().signal,
       callId: CallId('voice-complete-duplicate'),
       name: 'send_voice_message',
-      arguments: { delegation_id: taskId, channel: 'COMPLETE', detail: '重复结果' },
+      arguments: { channel: 'COMPLETE', detail: '重复结果' },
       agent: firstTask.agent,
     })
     const lateStatus = await ctx.tools.execute({
       signal: new AbortController().signal,
       callId: CallId('voice-status-late'),
       name: 'send_voice_message',
-      arguments: { delegation_id: taskId, channel: 'STATUS', detail: '过晚状态' },
+      arguments: { channel: 'STATUS', detail: '过晚状态' },
       agent: firstTask.agent,
     })
     expect(duplicateComplete).toMatchObject({ isError: true })
@@ -671,7 +663,7 @@ describe('voice assistant driver', () => {
       signal: new AbortController().signal,
       callId: CallId('voice-status-detached'),
       name: 'send_voice_message',
-      arguments: { delegation_id: cancelTaskId, channel: 'STATUS', detail: '断线期间仍在执行。' },
+      arguments: { channel: 'STATUS', detail: '断线期间仍在执行。' },
       agent: secondTask.agent,
     })
     expect(detachedStatus).toMatchObject({ isError: false, value: { delivery: 'queued' } })

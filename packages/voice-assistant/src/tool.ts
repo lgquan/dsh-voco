@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { VoiceTaskId, type VoiceTaskEventType, type VoiceTaskMessageId } from '@flowingspring/dsh-voice'
+import type { VoiceTaskEventType, VoiceTaskId, VoiceTaskMessageId } from '@flowingspring/dsh-voice'
 
 const VOICE_MESSAGE_SECTION_ORDER = 118
 
@@ -27,18 +27,27 @@ export interface VoiceMessageReceipt {
  */
 export type VoiceMessageSender = (input: VoiceMessageInput) => VoiceMessageReceipt
 
+/** Resolve the exact active delegation owned by this Agent scope. */
+export type VoiceDelegationIdResolver = () => VoiceTaskId | undefined
+
 /**
  * Install `send_voice_message` and its guidance into one delegated task Agent scope.
  * @param agentCtx - task-Agent context receiving the tool and guidance.
  * @param send - binding-owned message receiver.
+ * @param resolveDelegationId - resolves the active delegation without exposing its id to the model or transcript.
  * @returns disposer that revokes both registrations.
  */
-export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSender): () => void {
+export function installVoiceMessageTool(
+  agentCtx: Context,
+  send: VoiceMessageSender,
+  resolveDelegationId: VoiceDelegationIdResolver,
+): () => void {
   const disposeSection = agentCtx.systemPrompt.section({
     name: 'tool:send-voice-message',
     order: VOICE_MESSAGE_SECTION_ORDER,
-    text: 'When a user message contains a <realtime_delegation> request or <realtime_delegation_update>, '
-      + 'use send_voice_message with its delegation_id to keep the realtime voice assistant informed. '
+    text: 'This Agent handles tasks delegated by the realtime voice assistant. '
+      + 'While a realtime voice delegation is active, use send_voice_message to keep the voice assistant informed. '
+      + 'The tool is already bound to the exact active delegation; never ask for, invent, or expose an internal delegation id. '
       + 'Report structured events with type and detail. Use progress for meaningful progress, '
       + 'warning or error for important conditions, question when user input is required, and result exactly '
       + 'once before a successful final turn ends. Put the complete factual content in detail; the Voice layer '
@@ -46,25 +55,20 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
       + 'support an accurate rewrite. The full report remains in the task UI. The voice assistant does not automatically '
       + 'see your transcript, tool output, or reasoning. '
       + 'A result is held until the turn actually succeeds. A question leaves the task waiting for a user reply. '
-      + 'Reporting never ends your turn. Do not use '
-      + 'this tool for ordinary requests without a realtime_delegation envelope.',
+      + 'Reporting never ends your turn. Do not use this tool when no realtime voice delegation is active.',
   })
   let disposeTool: () => void
   try {
     disposeTool = agentCtx.tools.register(defineTool({
       name: 'send_voice_message',
       description: 'Send a user-facing status or final result to the realtime voice assistant for the exact '
-        + 'active delegation using type and complete factual detail. Progress, warnings, errors, and questions '
+        + 'active delegation using type and complete factual detail. The delegation is bound automatically; '
+        + 'no delegation id is accepted. Progress, warnings, errors, and questions '
         + 'may repeat when meaningful. result may be called once. The Voice layer independently rewrites detail '
         + 'into conversational speech, so this tool accepts no Agent-authored speech field. '
         + 'COMPLETE is held until the Agent turn succeeds; it does '
         + 'not finish the turn. The voice assistant does not otherwise see this Agent transcript or tool output.',
       parameters: {
-        delegation_id: {
-          type: 'string',
-          required: true,
-          description: 'Exact delegation_id from the realtime_delegation request envelope.',
-        },
         type: {
           type: 'string',
           enum: ['progress', 'result', 'warning', 'error', 'question'],
@@ -111,8 +115,10 @@ export function installVoiceMessageTool(agentCtx: Context, send: VoiceMessageSen
         const type = args.type ?? (args.channel === 'COMPLETE' ? 'result' : 'progress')
         const detail = args.detail.trim()
         if (detail === '') throw new Error('send_voice_message detail must be non-empty')
+        const delegationId = resolveDelegationId()
+        if (delegationId === undefined) throw new Error('send_voice_message has no active voice delegation')
         return Promise.resolve(send({
-          delegationId: VoiceTaskId(args.delegation_id),
+          delegationId,
           channel: type === 'result' ? 'COMPLETE' : 'STATUS',
           type,
           detail,

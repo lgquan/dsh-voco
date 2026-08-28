@@ -449,7 +449,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
       setup: (agentCtx: Context) => {
         presets?.composeFrom(agentCtx, sourceAgent.ctx)
-        disposeVoiceMessage = installVoiceMessageTool(agentCtx, input => sendVoiceMessage(binding, input))
+        disposeVoiceMessage = installVoiceMessageTool(
+          agentCtx,
+          input => sendVoiceMessage(binding, input),
+          () => binding.active?.id,
+        )
       },
     })
     handles.set(taskSessionId, handle)
@@ -478,7 +482,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (live !== undefined) {
       return {
         agent: live,
-        disposeVoiceMessage: installVoiceMessageTool(live.ctx, input => sendVoiceMessage(binding, input)),
+        disposeVoiceMessage: installVoiceMessageTool(
+          live.ctx,
+          input => sendVoiceMessage(binding, input),
+          () => binding.active?.id,
+        ),
       }
     }
     const sourceAgent = await ensureAgent(binding)
@@ -493,7 +501,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
       setup: (agentCtx: Context) => {
         presets?.composeFrom(agentCtx, sourceAgent.ctx)
-        disposeVoiceMessage = installVoiceMessageTool(agentCtx, input => sendVoiceMessage(binding, input))
+        disposeVoiceMessage = installVoiceMessageTool(
+          agentCtx,
+          input => sendVoiceMessage(binding, input),
+          () => binding.active?.id,
+        )
       },
     })
     handles.set(taskSessionId, handle)
@@ -731,9 +743,16 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
         } catch (error) { backendUnavailable(error); return }
         const message = createUserMessage({
-          content: [{ type: 'text', text: renderRealtimeDelegation(taskId, call.command.input, call.command.transcriptDelta) }],
+          content: [{ type: 'text', text: call.command.input }],
           source: { kind: 'user' },
         })
+        const transcriptContext = call.command.transcriptDelta?.trim()
+        const contextMessage = transcriptContext === undefined || transcriptContext === ''
+          ? undefined
+          : createUserMessage({
+              content: [{ type: 'text', text: `语音转写补充上下文：${transcriptContext}` }],
+              source: { kind: 'plugin', plugin: 'voice-assistant' },
+            })
         const task: ActiveTask = {
           id: taskId,
           interactionMode: 'frontend-agent',
@@ -753,8 +772,12 @@ export function apply(ctx: Context, config: Config = {}): void {
             taskSessionId: created.taskSessionId,
             input: call.command.input,
           })
+          if (contextMessage !== undefined) created.agent.inject(contextMessage)
           created.agent.followup(message)
         } catch (error) {
+          if (contextMessage !== undefined) {
+            try { created.agent.inbox.remove(contextMessage.id) } catch {}
+          }
           if (!continuous) taskBindings.delete(created.taskSessionId)
           binding.active = undefined
           try { task.disposeVoiceMessage?.() } catch (cleanupError: unknown) {
@@ -782,7 +805,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         const task = binding.active
         if (task === undefined) throw new Error('voice-assistant task state changed during command dispatch')
         const message = createUserMessage({
-          content: [{ type: 'text', text: renderRealtimeDelegationUpdate(task.id, call.command.message) }],
+          content: [{ type: 'text', text: call.command.message }],
           source: { kind: 'plugin', plugin: 'voice-assistant' },
         })
         const previousRequestText = task.requestText
@@ -1233,31 +1256,6 @@ function taskRejection(binding: Binding, taskId: VoiceTaskId): TaskCommandResult
   if (active.id !== taskId) return { kind: 'rejected', code: 'task_not_found', message: `task "${taskId}" is not active` }
   if (active.cancelling) return { kind: 'rejected', code: 'task_not_active', message: `task "${taskId}" is being cancelled` }
   return undefined
-}
-
-function renderRealtimeDelegation(taskId: VoiceTaskId, input: string, transcriptDelta?: string): string {
-  return [
-    '<realtime_delegation>',
-    `  <delegation_id>${escapeXmlText(taskId)}</delegation_id>`,
-    `  <input>${escapeXmlText(input)}</input>`,
-    ...(transcriptDelta === undefined
-      ? []
-      : [`  <transcript_delta>${escapeXmlText(transcriptDelta)}</transcript_delta>`]),
-    '</realtime_delegation>',
-  ].join('\n')
-}
-
-function renderRealtimeDelegationUpdate(taskId: VoiceTaskId, message: string): string {
-  return [
-    '<realtime_delegation_update>',
-    `  <delegation_id>${escapeXmlText(taskId)}</delegation_id>`,
-    `  <message>${escapeXmlText(message)}</message>`,
-    '</realtime_delegation_update>',
-  ].join('\n')
-}
-
-function escapeXmlText(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
 function terminalStatus(reason: string): 'completed' | 'failed' | 'cancelled' {
