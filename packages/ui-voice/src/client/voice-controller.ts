@@ -11,6 +11,7 @@ export interface VoiceLiveText {
 /** Root-owned voice transport projection shared by every UI seat. */
 export interface VoiceClientSnapshot {
   readonly state: VoiceClientState
+  readonly inputMuted: boolean
   readonly sessionId?: SessionId
   readonly textById: Readonly<Record<string, VoiceLiveText>>
 }
@@ -18,6 +19,7 @@ export interface VoiceClientSnapshot {
 interface VoiceTransport {
   close(): Promise<void>
   cancelTask(taskId: string): void
+  setInputMuted(muted: boolean): void
   submitText(text: string): void
 }
 
@@ -44,7 +46,7 @@ interface VoiceReadyEvent {
   readonly interactionMode: 'speech-shell' | 'frontend-agent'
 }
 
-const INITIAL_SNAPSHOT: VoiceClientSnapshot = { state: 'off', textById: {} }
+const INITIAL_SNAPSHOT: VoiceClientSnapshot = { state: 'off', inputMuted: false, textById: {} }
 
 /** Own the single browser microphone, provider WebSocket, playback queue, and live transcript feed. */
 export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> {
@@ -77,6 +79,10 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
    * @param sessionId - durable voice session to connect.
    */
   async start(sessionId: SessionId): Promise<void> {
+    await this.open(sessionId, false)
+  }
+
+  private async open(sessionId: SessionId, inputMuted: boolean): Promise<void> {
     const generation = ++this.generation
     this.pendingText.splice(0)
     this.conversationStarted = false
@@ -90,7 +96,7 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
     }
     const openingAbort = new AbortController()
     this.openingAbort = openingAbort
-    this.publish({ state: 'connecting', sessionId, textById: {} })
+    this.publish({ state: 'connecting', inputMuted, sessionId, textById: {} })
     try {
       const transport = await openVoiceTransport(String(sessionId), {
         onBinary: () => { this.setState('speaking') },
@@ -98,7 +104,10 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
         onPlaybackEnded: () => { this.setState('listening') },
         onUnexpectedClose: () => { this.handleUnexpectedClose() },
       }, openingAbort.signal, (opening) => {
-        if (generation === this.generation) this.openingTransport = opening
+        if (generation === this.generation) {
+          this.openingTransport = opening
+          opening.setInputMuted(this.snapshot.inputMuted)
+        }
         else void opening.close()
       }, contexts)
       if (generation !== this.generation) {
@@ -123,7 +132,18 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
   async retry(): Promise<void> {
     const sessionId = this.snapshot.sessionId
     if (sessionId === undefined) throw new Error('voice retry requires an active session')
-    await this.start(sessionId)
+    await this.open(sessionId, this.snapshot.inputMuted)
+  }
+
+  /** Mute or resume microphone input without closing text submission or playback. */
+  setInputMuted(muted: boolean): void {
+    if (this.snapshot.state === 'off' || this.snapshot.state === 'error' || this.snapshot.sessionId === undefined) {
+      throw new Error('voice input mute requires an active connection')
+    }
+    if (this.snapshot.inputMuted === muted) return
+    this.openingTransport?.setInputMuted(muted)
+    this.transport?.setInputMuted(muted)
+    this.publish({ ...this.snapshot, inputMuted: muted })
   }
 
   /** Cancel the exact active background task through the attached Voice transport. */
@@ -310,6 +330,7 @@ async function openVoiceTransport(
   let outputSampleRate = 24_000
   let audioFormat: VoiceReadyEvent['audio']['format'] = 'pcm_s16le'
   let playAt = outputContext.currentTime
+  let inputMuted = false
   const chunks: number[] = []
   const playing = new Set<AudioBufferSourceNode>()
 
@@ -317,6 +338,15 @@ async function openVoiceTransport(
     cancelTask: (taskId) => {
       if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
       socket.send(JSON.stringify({ type: 'task.cancel', taskId }))
+    },
+    setInputMuted: (muted) => {
+      if (inputMuted === muted) return
+      inputMuted = muted
+      chunks.splice(0)
+      for (const track of stream?.getTracks() ?? []) track.enabled = !muted
+      if (muted && !stopped && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'audio.commit' }))
+      }
     },
     submitText: (text) => {
       if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
@@ -424,6 +454,7 @@ async function openVoiceTransport(
       throw new Error('voice connection opening aborted')
     }
     stream = captured
+    for (const track of stream.getTracks()) track.enabled = !inputMuted
     await abortable(inputContext.audioWorklet.addModule(workletUrl), signal)
     if (openingStopped(signal, stopped)) throw new Error('voice connection opening aborted')
     source = inputContext.createMediaStreamSource(stream)
@@ -431,7 +462,7 @@ async function openVoiceTransport(
     silent = inputContext.createGain()
     silent.gain.value = 0
     processor.port.onmessage = (event: MessageEvent<Float32Array>) => {
-      if (socket.readyState !== WebSocket.OPEN) return
+      if (inputMuted || socket.readyState !== WebSocket.OPEN) return
       chunks.push(...resample(event.data, inputContext.sampleRate, inputSampleRate))
       const frameSize = Math.max(1, Math.round(inputSampleRate / 5))
       while (chunks.length >= frameSize) {

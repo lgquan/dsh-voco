@@ -71,7 +71,7 @@ export function apply(ctx: ClientContext): void {
       const sessionId = controller.getSnapshot().sessionId
       if (sessionId !== undefined) history.record(sessionId)
     },
-    stopVoice,
+    setVoiceMuted: (muted) => { controller.setInputMuted(muted) },
   })
   const voiceOverlayInjected = (): VoiceOverlayInjected => ({
     hooks: { voice: controller },

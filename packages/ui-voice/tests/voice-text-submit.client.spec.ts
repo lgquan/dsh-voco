@@ -18,7 +18,7 @@ function input(draft: string, imageIds: readonly unknown[] = []) {
 
 describe('VoiceTextSubmitBridge', () => {
   it('consumes plain composer text while voice is active and restores native submit on dispose', () => {
-    let snapshot: VoiceClientSnapshot = { state: 'listening', sessionId: SESSION, textById: {} }
+    let snapshot: VoiceClientSnapshot = { state: 'listening', inputMuted: true, sessionId: SESSION, textById: {} }
     const submitText = vi.fn()
     const current = input('  用语音回答  ')
     const nativeSubmit = current.value.submit
@@ -30,7 +30,7 @@ describe('VoiceTextSubmitBridge', () => {
     expect(current.value.setDraft).toHaveBeenCalledWith('')
     expect(nativeSubmit).not.toHaveBeenCalled()
 
-    snapshot = { state: 'off', textById: {} }
+    snapshot = { state: 'off', inputMuted: false, textById: {} }
     current.state.draft = '普通文本'
     current.value.submit()
     expect(nativeSubmit).toHaveBeenCalledOnce()

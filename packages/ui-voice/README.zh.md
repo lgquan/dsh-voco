@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`voice` profile 的浏览器对话界面。麦克风按钮把 Voice Mode 挂接到当前持久 Session；这个来源 Session 就是可恢复的语音会话窗口，新建普通 Session 才会得到新的语音会话身份。root 持有的 `/voice` WebSocket 让用户跳转查看委派任务时仍能继续采集和播放。只有服务端 `ready` 帧确认 provider session 与音频配置后才开始采集。该包采集带回声消除的音频，将其重采样为 16 kHz PCM，调度返回的 MP3 音频，并在新转写开始时立即停止待播放音频。Provider 错误或终止关闭会释放 WebSocket、麦克风 track、播放 source 与音频 context。
+`voice` profile 的浏览器对话界面。麦克风按钮第一次点击会把 Voice Mode 挂接到当前持久 Session；连接后同一个按钮切换麦克风静音与解除静音，静音态使用红色斜杠图标。静音会禁用麦克风 track、提交已发送的半句音频并停止后续 PCM 上传，但保留 `/voice` WebSocket、文字输入和语音播放；彻底结束会话仍由 root 浮层负责。这个来源 Session 就是可恢复的语音会话窗口，新建普通 Session 才会得到新的语音会话身份。root 持有的 `/voice` WebSocket 让用户跳转查看委派任务时仍能继续采集和播放。只有服务端 `ready` 帧确认 provider session 与音频配置后才开始采集。该包采集带回声消除的音频，将其重采样为 16 kHz PCM，调度返回的 MP3 音频，并在新转写开始时立即停止待播放音频。Provider 错误或终止关闭会释放 WebSocket、麦克风 track、播放 source 与音频 context。
 
 持久 ASR 和 TTS utterance 以带 Voice 标识的聊天消息展示。每次实时 ASR update 会替换上一版中间字幕；送入 TTS 的同一份文本会实时投影到开放的 assistant utterance，播放完成后持久化为 completed，中途打断则持久化为 interrupted。每个委派任务显示为默认折叠的紧凑状态卡，可展开摘要、取消活跃任务，并跳转到固定后台 Agent Session 查看完整过程。
 

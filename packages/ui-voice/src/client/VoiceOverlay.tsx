@@ -29,11 +29,14 @@ export function VoiceOverlay({ useVoice, useSessions, openVoiceSession, stopVoic
   const navigable = useSessions(sessions => voice.sessionId !== undefined && sessions.ids.includes(voice.sessionId))
   if (voice.state === 'off') return null
   return (
-    <aside className={css.root} data-voice-overlay data-state={voice.state} aria-live="polite">
+    <aside className={css.root} data-voice-overlay data-state={voice.state} data-muted={voice.inputMuted} aria-live="polite">
       <span className={css.wave} aria-hidden>
         <i /><i /><i /><i />
       </span>
       <span className={css.status}>{t(STATE_KEYS[voice.state])}</span>
+      {voice.inputMuted && voice.state !== 'error' && (
+        <span className={css.muted}>{t('overlay.muted')}</span>
+      )}
       {voice.sessionId !== undefined && (
         <button
           type="button"

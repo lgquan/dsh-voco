@@ -102,7 +102,7 @@ class FakeWorkletNode {
 const sockets: FakeSocket[] = []
 const contexts: FakeAudioContext[] = []
 const worklets: FakeWorkletNode[] = []
-const track = { stop: vi.fn() }
+const track = { enabled: true, stop: vi.fn() }
 const stream = { getTracks: () => [track] } as unknown as MediaStream
 let frames: FrameRequestCallback[] = []
 let getUserMedia: ReturnType<typeof vi.fn<() => Promise<MediaStream>>>
@@ -122,6 +122,7 @@ beforeEach(() => {
   contexts.length = 0
   worklets.length = 0
   frames = []
+  track.enabled = true
   track.stop.mockClear()
   vi.stubGlobal('WebSocket', FakeSocket)
   vi.stubGlobal('AudioContext', FakeAudioContext)
@@ -153,6 +154,58 @@ async function start(controller: VoiceController, readyOverrides: Record<string,
 }
 
 describe('VoiceController', () => {
+  it('mutes microphone capture without disabling typed turns or spoken replies', async () => {
+    const controller = new VoiceController()
+    const socket = await start(controller)
+    const samples = new Float32Array(9_600).fill(.5)
+
+    controller.setInputMuted(true)
+    expect(controller.getSnapshot()).toMatchObject({ inputMuted: true, state: 'listening' })
+    expect(track.enabled).toBe(false)
+    expect(socket.sent).toContain(JSON.stringify({ type: 'audio.commit' }))
+
+    const sentBeforeMutedFrame = socket.sent.length
+    worklets[0]!.port.onmessage?.(new MessageEvent('message', { data: samples }))
+    expect(socket.sent).toHaveLength(sentBeforeMutedFrame)
+
+    controller.submitText('静音时继续打字')
+    expect(socket.sent).toContain(JSON.stringify({ type: 'text.submit', text: '静音时继续打字' }))
+    socket.binary(new Int16Array([1, -1]).buffer)
+    expect(controller.getSnapshot()).toMatchObject({ inputMuted: true, state: 'speaking' })
+
+    controller.setInputMuted(false)
+    expect(controller.getSnapshot()).toMatchObject({ inputMuted: false, state: 'speaking' })
+    expect(track.enabled).toBe(true)
+    worklets[0]!.port.onmessage?.(new MessageEvent('message', { data: samples }))
+    expect(socket.sent.some(value => value instanceof ArrayBuffer)).toBe(true)
+
+    await controller.stop()
+    expect(controller.getSnapshot()).toEqual({ state: 'off', inputMuted: false, textById: {} })
+  })
+
+  it('applies mute selected while connecting and preserves it across retry', async () => {
+    const controller = new VoiceController()
+    const opening = controller.start(SESSION)
+    await vi.waitFor(() => { expect(sockets).toHaveLength(1) })
+    controller.setInputMuted(true)
+    sockets[0]!.open()
+    await Promise.resolve()
+    sockets[0]!.ready()
+    await opening
+    expect(track.enabled).toBe(false)
+    expect(controller.getSnapshot()).toMatchObject({ inputMuted: true, state: 'listening' })
+
+    const retrying = controller.retry()
+    await vi.waitFor(() => { expect(sockets).toHaveLength(2) })
+    sockets[1]!.open()
+    await Promise.resolve()
+    sockets[1]!.ready()
+    await retrying
+    expect(controller.getSnapshot()).toMatchObject({ inputMuted: true, state: 'listening' })
+    expect(track.enabled).toBe(false)
+    await controller.stop()
+  })
+
   it('waits for a validated ready event before acquiring the microphone or starting capture', async () => {
     const controller = new VoiceController()
     const opening = controller.start(SESSION)
@@ -581,7 +634,7 @@ describe('VoiceController', () => {
     dispose()
     await controller.stop()
     expect(socket.sent).toContain(JSON.stringify({ type: 'session.close' }))
-    expect(controller.getSnapshot()).toEqual({ state: 'off', textById: {} })
+    expect(controller.getSnapshot()).toEqual({ state: 'off', inputMuted: false, textById: {} })
     expect(track.stop).toHaveBeenCalledTimes(1)
     expect(contexts.every(context => context.close.mock.calls.length === 1)).toBe(true)
   })

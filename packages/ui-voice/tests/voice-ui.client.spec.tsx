@@ -239,7 +239,7 @@ describe('Voice Conversation Definitions', () => {
 })
 
 function voiceSnapshot(overrides: Partial<VoiceClientSnapshot> = {}): VoiceClientSnapshot {
-  return { state: 'off', textById: {}, ...overrides }
+  return { state: 'off', inputMuted: false, textById: {}, ...overrides }
 }
 
 function listState(ids: SessionId[] = [VOICE_SESSION]): SessionListState {
@@ -380,8 +380,8 @@ describe('Voice UI surfaces', () => {
 
   it('attaches Voice Mode to the current Session and controls the active transport', () => {
     const startVoice = vi.fn().mockResolvedValue(undefined)
-    const stopVoice = vi.fn().mockResolvedValue(undefined)
     const retryVoice = vi.fn().mockResolvedValue(undefined)
+    const setVoiceMuted = vi.fn()
     const base = {
       ...runtimeProps(),
       useSessions: (selector: (state: SessionListState) => unknown) => selector({
@@ -394,15 +394,23 @@ describe('Voice UI surfaces', () => {
         },
       }),
       useVoice: (selector: (snapshot: VoiceClientSnapshot) => unknown) => selector(voiceSnapshot()),
-      startVoice, stopVoice, retryVoice,
+      startVoice, retryVoice, setVoiceMuted,
     } as unknown as VoiceControlProps
     const view = render(<VoiceControl {...base} />)
     fireEvent.click(screen.getByRole('button', { name: '开始语音对话' }))
     expect(startVoice).toHaveBeenCalledWith(VOICE_SESSION)
 
     view.rerender(<VoiceControl {...base} useVoice={selector => selector(voiceSnapshot({ state: 'speaking' }))} />)
-    fireEvent.click(screen.getByRole('button', { name: '结束语音对话' }))
-    expect(stopVoice).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '静音麦克风' }))
+    expect(setVoiceMuted).toHaveBeenLastCalledWith(true)
+
+    view.rerender(<VoiceControl {...base} useVoice={selector => selector(voiceSnapshot({
+      state: 'speaking', inputMuted: true,
+    }))} />)
+    const muted = screen.getByRole('button', { name: '解除静音' })
+    expect(muted.getAttribute('data-muted')).toBe('true')
+    fireEvent.click(muted)
+    expect(setVoiceMuted).toHaveBeenLastCalledWith(false)
 
     view.rerender(<VoiceControl {...base} useVoice={selector => selector(voiceSnapshot({
       state: 'error', sessionId: VOICE_SESSION,
@@ -426,7 +434,7 @@ describe('Voice UI surfaces', () => {
       useVoice={selector => selector(voiceSnapshot())}
       startVoice={startVoice}
       retryVoice={vi.fn().mockResolvedValue(undefined)}
-      stopVoice={vi.fn().mockResolvedValue(undefined)}
+      setVoiceMuted={vi.fn()}
     />)
     fireEvent.click(screen.getByRole('button', { name: 'Start voice conversation' }))
     expect(startVoice).toHaveBeenCalledTimes(1)
@@ -452,6 +460,10 @@ describe('Voice UI surfaces', () => {
     fireEvent.click(screen.getByRole('button', { name: '结束' }))
     expect(openVoiceSession).toHaveBeenCalledWith(VOICE_SESSION)
     expect(stopVoice).toHaveBeenCalledTimes(1)
+    view.rerender(<VoiceOverlay {...props} useVoice={selector => selector(voiceSnapshot({
+      state: 'speaking', sessionId: VOICE_SESSION, inputMuted: true,
+    }))} />)
+    expect(screen.getByText('麦克风已静音')).toBeTruthy()
     view.rerender(<VoiceOverlay {...props} useVoice={selector => selector(voiceSnapshot({ state: 'error' }))} />)
     expect(screen.getByText('语音连接失败')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '返回语音对话' })).toBeNull()
@@ -514,6 +526,7 @@ describe('Voice UI assembly', () => {
     const start = vi.spyOn(VoiceController.prototype, 'start').mockResolvedValue(undefined)
     const stop = vi.spyOn(VoiceController.prototype, 'stop').mockResolvedValue(undefined)
     const retry = vi.spyOn(VoiceController.prototype, 'retry').mockResolvedValue(undefined)
+    const setInputMuted = vi.spyOn(VoiceController.prototype, 'setInputMuted').mockImplementation(() => undefined)
     const input = {
       state: { getSnapshot: () => ({ draft: '', imageIds: [] }) },
       setDraft: vi.fn(), submit: vi.fn(), notify: vi.fn(),
@@ -550,15 +563,16 @@ describe('Voice UI assembly', () => {
       hooks: { voice: VoiceController }
       startVoice(sessionId: SessionId): Promise<void>
       retryVoice(): Promise<void>
-      stopVoice(): Promise<void>
+      setVoiceMuted(muted: boolean): void
     })()
     await control.startVoice(VOICE_SESSION)
     expect(connectWorkspace).not.toHaveBeenCalled()
     expect(open).toHaveBeenCalledWith(VOICE_SESSION)
     expect(start).toHaveBeenCalledWith(VOICE_SESSION)
     await control.retryVoice()
-    await control.stopVoice()
+    control.setVoiceMuted(true)
     expect(retry).toHaveBeenCalledTimes(1)
+    expect(setInputMuted).toHaveBeenCalledWith(true)
     vi.spyOn(control.hooks.voice, 'getSnapshot').mockReturnValue(voiceSnapshot({
       state: 'listening', sessionId: VOICE_SESSION,
     }))
@@ -589,7 +603,7 @@ describe('Voice UI assembly', () => {
     expect(unregisterLocale).toHaveBeenCalledTimes(1)
     const dispose = effects[1]!() as () => Promise<void>
     await dispose()
-    expect(stop.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(stop.mock.calls.length).toBeGreaterThanOrEqual(2)
     const disposeTextSubmit = effects[2]!() as () => void
     disposeTextSubmit()
     const disposeHistory = effects[3]!() as () => void

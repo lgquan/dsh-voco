@@ -52,6 +52,19 @@
   white-space: nowrap;
 }
 
+.muted {
+  flex: none;
+  color: var(--dsw-alias-state-error-primary);
+  font-weight: 600;
+}
+
+.root[data-muted='true'] .wave {
+  color: var(--dsw-alias-state-error-primary);
+  opacity: .65;
+}
+
+.root[data-muted='true'] .wave i { animation: none; }
+
 .link,
 .stop {
   flex: none;
