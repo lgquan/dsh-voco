@@ -1,5 +1,6 @@
 {
   "name": "@lgquan/dsh-voice-web",
+  "private": true,
   "description": "Dedicated browser WebSocket carrier for dsh-voice",
   "version": "0.1.2",
   "publishConfig": {

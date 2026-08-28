@@ -99,8 +99,8 @@ export function clientBundle(
   return ({ env }) => {
     const face = buildFace(env?.DSH_BUILD_FACE)
     const client = clientConfig(id, face === undefined
-      ? 'src/client/index.ts'
-      : 'lib/types/client/index.js')
+      ? options.clientEntry?.source ?? 'src/client/index.ts'
+      : options.clientEntry?.emitted ?? 'lib/types/client/index.js')
     const node = [lib, ...(options.companions ?? [])]
     if (face === 'host') return options.hostPhase === true ? node : [SKIP_WORKSPACE_BUILD]
     if (face === 'client') return options.hostPhase === true ? [client] : [...node, client]
@@ -137,6 +137,11 @@ interface ClientBundleOptions {
   readonly companions?: readonly UserConfig[]
   /** Overrides for the package's primary Node-side library config. */
   readonly lib?: UserConfig
+  /** Optional browser entry owned by another internal workspace module. */
+  readonly clientEntry?: {
+    readonly source: string
+    readonly emitted: string
+  }
 }
 
 type BuildFace = 'host' | 'client' | undefined

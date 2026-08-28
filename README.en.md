@@ -24,7 +24,7 @@ $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app"
 ```
 
-The public installation entry is `@lgquan/dsh-voco`, sourced from `packages/voice-app`. The remaining `@lgquan/*` packages are internal feature modules installed transitively, so they do not need to be added one by one.
+The public installation entry is `@lgquan/dsh-voco`, sourced from `packages/voice-app`. The remaining `@lgquan/*` workspaces are development-only internal modules; their server entries and browser UI are bundled into `@lgquan/dsh-voco` rather than installed as user-facing plugins.
 
 The `dsh` command comes from `npm install -g @deepseek-ai/dsh`. Launch web (the voice surface loads with it):
 

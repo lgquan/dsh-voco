@@ -1,5 +1,6 @@
 {
   "name": "@lgquan/dsh-voice",
+  "private": true,
   "description": "Provider-neutral realtime voice session capability seam",
   "version": "0.1.2",
   "publishConfig": {

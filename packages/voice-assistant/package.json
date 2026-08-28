@@ -1,5 +1,6 @@
 {
   "name": "@lgquan/dsh-voice-assistant",
+  "private": true,
   "description": "Binds realtime voice sessions to ordinary dsh text Agents",
   "version": "0.1.2",
   "publishConfig": {

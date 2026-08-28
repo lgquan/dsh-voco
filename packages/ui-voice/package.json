@@ -1,5 +1,6 @@
 {
   "name": "@lgquan/dsh-client-ui-voice",
+  "private": true,
   "description": "Browser microphone and speech playback control for the voice profile",
   "version": "0.1.2",
   "publishConfig": {

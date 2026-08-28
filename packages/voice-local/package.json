@@ -1,5 +1,6 @@
 {
   "name": "@lgquan/dsh-voice-local",
+  "private": true,
   "description": "Silence-gated SiliconFlow cloud ASR with Edge TTS for dsh-voice",
   "version": "0.1.0",
   "type": "module",
