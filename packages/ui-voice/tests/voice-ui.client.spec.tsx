@@ -456,6 +456,7 @@ describe('Voice UI surfaces', () => {
     } as unknown as VoiceOverlayProps
     const view = render(<VoiceOverlay {...props} />)
     expect(screen.getByText('正在聆听')).toBeTruthy()
+    expect(screen.getByText('已静音').getAttribute('aria-hidden')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: '返回语音对话' }))
     fireEvent.click(screen.getByRole('button', { name: '结束' }))
     expect(openVoiceSession).toHaveBeenCalledWith(VOICE_SESSION)
@@ -463,7 +464,7 @@ describe('Voice UI surfaces', () => {
     view.rerender(<VoiceOverlay {...props} useVoice={selector => selector(voiceSnapshot({
       state: 'speaking', sessionId: VOICE_SESSION, inputMuted: true,
     }))} />)
-    expect(screen.getByText('麦克风已静音')).toBeTruthy()
+    expect(screen.getByText('已静音').getAttribute('aria-hidden')).toBe('false')
     view.rerender(<VoiceOverlay {...props} useVoice={selector => selector(voiceSnapshot({ state: 'error' }))} />)
     expect(screen.getByText('语音连接失败')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '返回语音对话' })).toBeNull()
