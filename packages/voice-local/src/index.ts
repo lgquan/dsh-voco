@@ -48,10 +48,28 @@ export const Config: z<Config> = z.object({
 })
 
 const PACKAGE_ROOT = dirname(fileURLToPath(import.meta.url))
-const PROJECT_ENV = resolve(PACKAGE_ROOT, '../../../.env')
+
+/**
+ * Load development configuration from either the source workspace or the
+ * bundled single-package layout. DSH-installed profiles still use the
+ * process environment, so no package-local `.env` is required in production.
+ */
+function loadProjectEnv(): void {
+  const candidates = [
+    resolve(process.cwd(), '.env'),
+    resolve(PACKAGE_ROOT, '../../../.env'),
+    resolve(PACKAGE_ROOT, '../../../../.env'),
+  ]
+  const loaded = new Set<string>()
+  for (const filename of candidates) {
+    if (loaded.has(filename) || !existsSync(filename)) continue
+    loaded.add(filename)
+    loadEnvFile(filename)
+  }
+}
 
 export function apply(ctx: Context, config: Config = {}): () => void {
-  if (existsSync(PROJECT_ENV)) loadEnvFile(PROJECT_ENV)
+  loadProjectEnv()
   const provider: VoiceProvider = {
     id: 'local',
     available: () => true,
