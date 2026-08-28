@@ -8,7 +8,7 @@ import VoiceRuntime, {
   VoiceUtteranceId,
   type TaskObservation,
   type VoiceProviderSession,
-} from '@lgquan/dsh-voice'
+} from '@flowingspring/dsh-voice'
 import { describe, expect, it, vi } from 'vitest'
 
 interface FakeProviderSession {

@@ -59,7 +59,7 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)
-      '@lgquan/dsh-voice':
+      '@flowingspring/dsh-voice':
         specifier: workspace:*
         version: link:../voice
       '@testing-library/react':
@@ -121,9 +121,6 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))
-      '@deepseek-ai/dsh-client-connection':
-        specifier: ^0.1.1-rc.1
-        version: 0.1.1-rc.2(9b40f28fccfb9ee3f86188afc9586c29)
       '@deepseek-ai/dsh-client-locale':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.2(048e7c438545728704e82d9acbc5c221)
@@ -166,22 +163,22 @@ importers:
       '@deepseek-ai/dsh-workspace':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.2(ca1aef6913f66bb64a14405a8170db89)
-      '@lgquan/dsh-client-ui-voice':
+      '@flowingspring/dsh-client-ui-voice':
         specifier: workspace:*
         version: link:../ui-voice
-      '@lgquan/dsh-llm-tool-call-compat':
+      '@flowingspring/dsh-llm-tool-call-compat':
         specifier: workspace:*
         version: link:../llm-tool-call-compat
-      '@lgquan/dsh-voice':
+      '@flowingspring/dsh-voice':
         specifier: workspace:*
         version: link:../voice
-      '@lgquan/dsh-voice-assistant':
+      '@flowingspring/dsh-voice-assistant':
         specifier: workspace:*
         version: link:../voice-assistant
-      '@lgquan/dsh-voice-local':
+      '@flowingspring/dsh-voice-local':
         specifier: workspace:*
         version: link:../voice-local
-      '@lgquan/dsh-voice-web':
+      '@flowingspring/dsh-voice-web':
         specifier: workspace:*
         version: link:../voice-web
       '@types/react':
@@ -236,7 +233,7 @@ importers:
       '@deepseek-ai/dsh-workspace':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.2(ca1aef6913f66bb64a14405a8170db89)
-      '@lgquan/dsh-voice':
+      '@flowingspring/dsh-voice':
         specifier: workspace:*
         version: link:../voice
 
@@ -258,7 +255,7 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.2(a4e4bb24a1f3580ac25e11cfa3c6b8cc)
-      '@lgquan/dsh-voice':
+      '@flowingspring/dsh-voice':
         specifier: workspace:*
         version: link:../voice
 
@@ -274,9 +271,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
         version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
-      '@deepseek-ai/dsh-client-connection':
-        specifier: ^0.1.1-rc.1
-        version: 0.1.1-rc.2(9b40f28fccfb9ee3f86188afc9586c29)
       '@deepseek-ai/dsh-host-webserver':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))
@@ -286,7 +280,7 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.2(a4e4bb24a1f3580ac25e11cfa3c6b8cc)
-      '@lgquan/dsh-voice':
+      '@flowingspring/dsh-voice':
         specifier: workspace:*
         version: link:../voice
       '@types/ws':

@@ -1,5 +1,5 @@
 {
-  "name": "@lgquan/dsh-llm-tool-call-compat",
+  "name": "@flowingspring/dsh-llm-tool-call-compat",
   "private": true,
   "description": "Compatibility shim for OpenAI-compatible SSE tool call deltas",
   "version": "0.1.0",

@@ -30,7 +30,7 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
  * Everything else under @deepseek-ai/* is either a module-table entry
  * (external) or a leak the purity gate rejects.
  */
-export const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
+const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
 
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
@@ -62,7 +62,7 @@ const SKIP_WORKSPACE_BUILD: UserConfig = { entry: '' }
 const RUNTIME_STORE_EXEMPTION = '@deepseek-ai/dsh-client-runtime/client'
 
 /** Externals resolved from the loader module table: the platform seed entries plus the documented runtime exemption. */
-export const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES, RUNTIME_STORE_EXEMPTION]
+const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES, RUNTIME_STORE_EXEMPTION]
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('.', import.meta.url))
 
@@ -106,28 +106,6 @@ export function clientBundle(
     if (face === 'client') return options.hostPhase === true ? [client] : [...node, client]
     return [...node, client]
   }
-}
-
-/**
- * Build a Client-only Node library during the Client pass.
- * @param id - Package name used in tsdown diagnostics.
- * @param libEntry - Emitted JavaScript entries consumed from `lib/types`.
- * @returns ENV-selected tsdown config for the Client build face.
- */
-export function clientLibrary(id: string, libEntry: readonly string[]): BuildFaceConfig {
-  const lib = clientLibraryConfig(id, libEntry)
-  return clientOnly([lib])
-}
-
-/**
- * Select arbitrary package-local configs only during the Client pass.
- * @param configs - Node-side configs emitted after Client tsc.
- * @returns ENV-selected tsdown config for the Client build face.
- */
-export function clientOnly(configs: readonly UserConfig[]): BuildFaceConfig {
-  return ({ env }) => buildFace(env?.DSH_BUILD_FACE) === 'host'
-    ? [SKIP_WORKSPACE_BUILD]
-    : [...configs]
 }
 
 interface ClientBundleOptions {

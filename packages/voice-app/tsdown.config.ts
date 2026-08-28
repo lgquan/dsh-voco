@@ -22,7 +22,7 @@ const serverPlugins: UserConfig = {
   fixedExtension: false,
   dts: false,
   clean: false,
-  noExternal: [/^@lgquan\//],
+  noExternal: [/^@flowingspring\//],
 }
 
 export default clientBundle('@flowingspring/dsh-voco', [

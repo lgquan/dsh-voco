@@ -17,7 +17,7 @@ import {
   type VoiceEvent,
   type VoiceInteractionMode,
   type VoiceSessionInfo,
-} from '@lgquan/dsh-voice'
+} from '@flowingspring/dsh-voice'
 import type { VoiceMessageInput, VoiceMessageReceipt } from '../src/tool.ts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

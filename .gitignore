@@ -3,7 +3,6 @@ lib/
 *.tsbuildinfo
 dist/
 .cache/
-speech/models/
 .env
 
 .npmrc

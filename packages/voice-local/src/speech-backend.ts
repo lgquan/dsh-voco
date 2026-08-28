@@ -1,4 +1,4 @@
-import type { VoiceAudioProfile } from '@lgquan/dsh-voice'
+import type { VoiceAudioProfile } from '@flowingspring/dsh-voice'
 
 export type SpeechBackendEvent =
   | { readonly type: 'ready' }

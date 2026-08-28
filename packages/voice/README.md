@@ -1,4 +1,4 @@
-# `@lgquan/dsh-voice`
+# `@flowingspring/dsh-voice`
 
 English | [中文](README.zh.md)
 

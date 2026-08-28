@@ -3,4 +3,4 @@ import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 export const name = 'voice-local-invariant'
 export const inject = ['invariants']
 const install: InvariantInstaller = () => {}
-export const apply = (ctx: Context): Promise<() => void> => Promise.resolve(ctx.invariants.register('@lgquan/dsh-voice-local', install))
+export const apply = (ctx: Context): Promise<() => void> => Promise.resolve(ctx.invariants.register('@flowingspring/dsh-voice-local', install))

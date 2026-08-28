@@ -13,6 +13,3 @@ export const PLATFORM_MODULES = [
   '@deepseek-ai/dsh-client-ui-attachment',
   '@deepseek-ai/dsh-client-schema-form',
 ] as const
-
-/** One platform module specifier (a seed-table key). */
-export type PlatformModule = (typeof PLATFORM_MODULES)[number]

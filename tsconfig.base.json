@@ -26,37 +26,37 @@
       "node"
     ],
     "paths": {
-      "@lgquan/dsh-voice": [
+      "@flowingspring/dsh-voice": [
         "./packages/voice/src"
       ],
-      "@lgquan/dsh-voice/invariant": [
+      "@flowingspring/dsh-voice/invariant": [
         "./packages/voice/src/invariant.ts"
       ],
-      "@lgquan/dsh-voice-local": [
+      "@flowingspring/dsh-voice-local": [
         "./packages/voice-local/src"
       ],
-      "@lgquan/dsh-voice-local/invariant": [
+      "@flowingspring/dsh-voice-local/invariant": [
         "./packages/voice-local/src/invariant.ts"
       ],
-      "@lgquan/dsh-voice-assistant": [
+      "@flowingspring/dsh-voice-assistant": [
         "./packages/voice-assistant/src"
       ],
-      "@lgquan/dsh-voice-assistant/invariant": [
+      "@flowingspring/dsh-voice-assistant/invariant": [
         "./packages/voice-assistant/src/invariant.ts"
       ],
-      "@lgquan/dsh-voice-web": [
+      "@flowingspring/dsh-voice-web": [
         "./packages/voice-web/src"
       ],
-      "@lgquan/dsh-voice-web/invariant": [
+      "@flowingspring/dsh-voice-web/invariant": [
         "./packages/voice-web/src/invariant.ts"
       ],
-      "@lgquan/dsh-client-ui-voice": [
+      "@flowingspring/dsh-client-ui-voice": [
         "./packages/ui-voice/src"
       ],
-      "@lgquan/dsh-client-ui-voice/invariant": [
+      "@flowingspring/dsh-client-ui-voice/invariant": [
         "./packages/ui-voice/src/invariant.ts"
       ],
-      "@lgquan/dsh-client-ui-voice/client": [
+      "@flowingspring/dsh-client-ui-voice/client": [
         "./packages/ui-voice/src/client"
       ],
       "@flowingspring/dsh-voco": [
@@ -65,7 +65,7 @@
       "@flowingspring/dsh-voco/invariant": [
         "./packages/voice-app/src/invariant.ts"
       ],
-      "@lgquan/dsh-llm-tool-call-compat": [
+      "@flowingspring/dsh-llm-tool-call-compat": [
         "./packages/llm-tool-call-compat/src"
       ]
     }

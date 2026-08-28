@@ -1,8 +1,8 @@
-/** Agent-scoped tool for reporting one voice delegation. @module @lgquan/dsh-voice-assistant/tool */
+/** Agent-scoped tool for reporting one voice delegation. @module @flowingspring/dsh-voice-assistant/tool */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { VoiceTaskId, type VoiceTaskEventType, type VoiceTaskMessageId } from '@lgquan/dsh-voice'
+import { VoiceTaskId, type VoiceTaskEventType, type VoiceTaskMessageId } from '@flowingspring/dsh-voice'
 
 const VOICE_MESSAGE_SECTION_ORDER = 118
 

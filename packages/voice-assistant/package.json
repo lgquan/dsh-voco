@@ -1,5 +1,5 @@
 {
-  "name": "@lgquan/dsh-voice-assistant",
+  "name": "@flowingspring/dsh-voice-assistant",
   "private": true,
   "description": "Binds realtime voice sessions to ordinary dsh text Agents",
   "version": "0.1.2",
@@ -43,7 +43,7 @@
     "@deepseek-ai/dsh-session-persistence": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-system-prompt": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-tools": "^0.1.1-rc.1",
-    "@lgquan/dsh-voice": "workspace:*",
+    "@flowingspring/dsh-voice": "workspace:*",
     "@deepseek-ai/dsh-workspace": "^0.1.1-rc.1"
   },
   "dependencies": {
@@ -60,7 +60,7 @@
     "@deepseek-ai/dsh-session-persistence": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-system-prompt": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-tools": "^0.1.1-rc.1",
-    "@lgquan/dsh-voice": "workspace:*",
+    "@flowingspring/dsh-voice": "workspace:*",
     "@deepseek-ai/dsh-workspace": "^0.1.1-rc.1"
   }
 }

@@ -1,4 +1,4 @@
-import { VoiceResponseId, VoiceSessionId, VoiceTaskId } from '@lgquan/dsh-voice'
+import { VoiceResponseId, VoiceSessionId, VoiceTaskId } from '@flowingspring/dsh-voice'
 import { describe, expect, it, vi } from 'vitest'
 import { LocalSession } from '../src/index.ts'
 import type { SpeechBackend, SpeechBackendEvent } from '../src/speech-backend.ts'

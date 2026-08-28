@@ -1,4 +1,4 @@
-/** Provider-neutral realtime voice session capability seam. @module @lgquan/dsh-voice */
+/** Provider-neutral realtime voice session capability seam. @module @flowingspring/dsh-voice */
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'

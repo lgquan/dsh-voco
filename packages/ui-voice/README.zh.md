@@ -1,4 +1,4 @@
-# `@lgquan/dsh-client-ui-voice`
+# `@flowingspring/dsh-client-ui-voice`
 
 [English](README.md) | 中文
 

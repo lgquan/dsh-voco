@@ -12,7 +12,7 @@ import {
   type VoiceProviderSession,
   type VoiceResponsePolicy,
   type VoiceSessionId,
-} from '@lgquan/dsh-voice'
+} from '@flowingspring/dsh-voice'
 import type { SpeechBackend, SpeechBackendEvent } from './speech-backend.ts'
 
 /** Provider session translating local speech events to the shared voice seam. */

@@ -6,7 +6,7 @@ import type {
   ConversationViewDefinition, SessionId, SessionListState, WorkspaceId, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-runtime/client'
-import { VoiceTaskId, VoiceUtteranceId } from '@lgquan/dsh-voice'
+import { VoiceTaskId, VoiceUtteranceId } from '@flowingspring/dsh-voice'
 import {
   VoiceControl, type VoiceControlInjected, type VoiceControlProps,
 } from '../src/client/VoiceControl.tsx'

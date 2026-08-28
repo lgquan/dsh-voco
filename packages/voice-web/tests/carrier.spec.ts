@@ -10,7 +10,7 @@ import VoiceRuntime, {
   type VoiceProvider,
   type VoiceProviderEvent,
   type VoiceProviderSession,
-} from '@lgquan/dsh-voice'
+} from '@flowingspring/dsh-voice'
 import WebSocket, { WebSocketServer } from 'ws'
 import { apply, type Config } from '../src/index.ts'
 

@@ -1,4 +1,4 @@
-/** Voice-to-Agent driver using ordinary followup, steer and cancel operations. @module @lgquan/dsh-voice-assistant */
+/** Voice-to-Agent driver using ordinary followup, steer and cancel operations. @module @flowingspring/dsh-voice-assistant */
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
@@ -26,7 +26,7 @@ import {
   type VoiceTaskEventType,
   type VoiceTaskMessage,
   type VoiceUtteranceId,
-} from '@lgquan/dsh-voice'
+} from '@flowingspring/dsh-voice'
 import { installVoiceMessageTool, type VoiceMessageInput, type VoiceMessageReceipt } from './tool.ts'
 
 export const name = 'voice-assistant'

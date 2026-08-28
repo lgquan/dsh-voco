@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { VoiceAudioProfile } from '@lgquan/dsh-voice'
+import type { VoiceAudioProfile } from '@flowingspring/dsh-voice'
 import { splitSpeechText, synthesizeEdgeSpeech } from './edge-tts.ts'
 import { SiliconFlowAsr } from './siliconflow-asr.ts'
 import type { SpeechBackend, SpeechBackendEvent } from './speech-backend.ts'
