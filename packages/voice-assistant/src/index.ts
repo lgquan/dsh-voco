@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
@@ -123,6 +123,8 @@ interface ContinuousTaskAgent {
   readonly taskSessionId: SessionId
   readonly agent: Agent
   readonly disposeVoiceMessage: () => void
+  readonly selection: ModelSelection
+  readonly sourceHeaderSeq: number | undefined
 }
 
 interface Binding {
@@ -141,6 +143,12 @@ interface Binding {
   chain: Promise<void>
   rewriteGeneration: number
   rewriteAbort: AbortController | undefined
+}
+
+function sameModelSelection(left: ModelSelection, right: ModelSelection): boolean {
+  return left.provider === right.provider
+    && left.model === right.model
+    && left.reasoningEffort === right.reasoningEffort
 }
 
 const REWRITE_SYSTEM_PROMPT = `你是语音模式下的自然回复编辑器。你的任务是把后台处理结果改写成准确、自然、适合直接朗读的中文回复。
@@ -248,7 +256,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     const voiceId = binding.voiceSessionId
     if (voiceId === undefined || !binding.voiceAttached || text.trim() === '') return
     if (ctx.voice.appendSpeechText(voiceId, text)) {
-      if (flush) ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
+      if (flush) {
+        debugVoiceLatency('tts-request', { taskId, textLength: text.length })
+        ctx.voice.requestResponse(voiceId, { kind: 'automatic' })
+      }
       return
     }
     // Providers without the optional streaming face still receive a usable
@@ -280,6 +291,14 @@ export function apply(ctx: Context, config: Config = {}): void {
     const abort = new AbortController()
     binding.rewriteAbort = abort
     const selection = ctx.agentDefaultModel.currentSelection()
+    debugVoiceLatency('rewrite-start', {
+      taskId,
+      eventType,
+      provider: selection.provider,
+      model: selection.model,
+      selectedReasoningEffort: selection.reasoningEffort,
+      originalLength: original.length,
+    })
     const prompt = [
       '根据用户原话和处理结果，生成一条可以直接显示并朗读的最终回复。',
       REWRITE_EVENT_INSTRUCTIONS[eventType],
@@ -301,13 +320,16 @@ export function apply(ctx: Context, config: Config = {}): void {
       for await (const chunk of llm.stream({
         provider: selection.provider,
         model: selection.model,
-        ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+        // Voice rewriting is an auxiliary summarization call. Do not inherit
+        // the main Agent's reasoning effort; providers may apply their own
+        // default when the optional field is omitted.
         messages: [message],
         system: REWRITE_SYSTEM_PROMPT,
         signal: abort.signal,
       })) {
         if (generation !== binding.rewriteGeneration || abort.signal.aborted) return
         if (chunk.type !== 'text-delta') continue
+        if (rewritten === '') debugVoiceLatency('rewrite-first-text', { taskId })
         rewritten += chunk.text
         pending += chunk.text
         const split = speechFragments(pending, false)
@@ -321,6 +343,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (rewritten.trim() === '' && pending.trim() === '') speakFragment(binding, taskId, fallbackEventSpeech(eventType, original))
     } catch (error: unknown) {
       if (!abort.signal.aborted && generation === binding.rewriteGeneration) {
+        debugVoiceLatency('rewrite-error', { taskId, error: String(error) })
         ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
         speakFragment(binding, taskId, fallbackEventSpeech(eventType, original))
       }
@@ -423,7 +446,51 @@ export function apply(ctx: Context, config: Config = {}): void {
     return handle.agent
   }
 
-  const createTaskAgent = async (binding: Binding, taskSessionId: SessionId): Promise<{
+  const loggedSourceSelection = (binding: Binding): {
+    readonly selection: ModelSelection
+    readonly seq: number
+  } | undefined => {
+    const session = ctx.sessions.get(binding.sessionId)
+    const event = session?.events.findLast(candidate => candidate.type === 'request/header')
+    if (event?.type !== 'request/header') return undefined
+    const config = event.data.header.config
+    return {
+      selection: {
+        provider: config.provider,
+        model: config.model,
+        ...(config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort }),
+      },
+      seq: event.seq,
+    }
+  }
+
+  const taskModelSelection = (binding: Binding): {
+    readonly selection: ModelSelection
+    readonly sourceHeaderSeq: number | undefined
+  } => {
+    const defaults = ctx.agentDefaultModel.currentSelection()
+    const logged = loggedSourceSelection(binding)
+    const current = binding.continuousTaskAgent?.selection
+    if (current === undefined) {
+      return {
+        selection: logged?.selection ?? defaults,
+        sourceHeaderSeq: logged?.seq,
+      }
+    }
+    if (logged !== undefined && logged.seq !== binding.continuousTaskAgent?.sourceHeaderSeq) {
+      return { selection: logged.selection, sourceHeaderSeq: logged.seq }
+    }
+    return {
+      selection: sameModelSelection(defaults, current) ? current : defaults,
+      sourceHeaderSeq: logged?.seq,
+    }
+  }
+
+  const createTaskAgent = async (
+    binding: Binding,
+    taskSessionId: SessionId,
+    selection: ModelSelection,
+  ): Promise<{
     readonly agent: Agent
     readonly disposeVoiceMessage: () => void
   }> => {
@@ -432,8 +499,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (sourceSession === undefined) {
       throw new Error(`voice-assistant: source session "${binding.sessionId}" is not live`)
     }
-    const defaults = ctx.agentDefaultModel.currentSelection()
-    const header = foldRequestHeader(sourceSession.events)
     const presetId = resolveSessionPreset(sourceSession)
     const presets = ctx.get('agentPresets')
     let disposeVoiceMessage: (() => void) | undefined
@@ -444,8 +509,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         ...(presetId === undefined ? {} : { agentPreset: presetId }),
       },
       agentOptions: {
-        provider: sourceAgent.options.provider ?? header?.config.provider ?? defaults.provider,
-        model: sourceAgent.options.model ?? header?.config.model ?? defaults.model,
+        provider: selection.provider,
+        model: selection.model,
       },
       setup: (agentCtx: Context) => {
         presets?.composeFrom(agentCtx, sourceAgent.ctx)
@@ -474,7 +539,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     return { agent: handle.agent, disposeVoiceMessage }
   }
 
-  const resumeTaskAgent = async (binding: Binding, taskSessionId: SessionId): Promise<{
+  const resumeTaskAgent = async (
+    binding: Binding,
+    taskSessionId: SessionId,
+    selection: ModelSelection,
+  ): Promise<{
     readonly agent: Agent
     readonly disposeVoiceMessage: () => void
   }> => {
@@ -490,14 +559,13 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     }
     const sourceAgent = await ensureAgent(binding)
-    const defaults = ctx.agentDefaultModel.currentSelection()
     const presets = ctx.get('agentPresets')
     let disposeVoiceMessage: (() => void) | undefined
     const handle = await ctx.agents.resume({
       resumeSessionId: taskSessionId,
       agentOptions: {
-        provider: sourceAgent.options.provider ?? defaults.provider,
-        model: sourceAgent.options.model ?? defaults.model,
+        provider: selection.provider,
+        model: selection.model,
       },
       setup: (agentCtx: Context) => {
         presets?.composeFrom(agentCtx, sourceAgent.ctx)
@@ -518,7 +586,37 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
 
   const ensureContinuousTaskAgent = async (binding: Binding): Promise<ContinuousTaskAgent> => {
-    if (binding.continuousTaskAgent !== undefined) return binding.continuousTaskAgent
+    const { selection, sourceHeaderSeq } = taskModelSelection(binding)
+    const current = binding.continuousTaskAgent
+    if (current !== undefined && sameModelSelection(current.selection, selection)) {
+      if (current.sourceHeaderSeq === sourceHeaderSeq) return current
+      const refreshed = { ...current, sourceHeaderSeq }
+      binding.continuousTaskAgent = refreshed
+      return refreshed
+    }
+    if (current !== undefined) {
+      binding.continuousTaskAgent = undefined
+      taskBindings.delete(current.taskSessionId)
+      try {
+        await current.agent.whenIdle()
+      } catch (error: unknown) {
+        ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      }
+      try {
+        current.disposeVoiceMessage()
+      } catch (error: unknown) {
+        ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      }
+      const handle = handles.get(current.taskSessionId)
+      if (handle !== undefined) {
+        handles.delete(current.taskSessionId)
+        try {
+          await handle.dispose()
+        } catch (error: unknown) {
+          ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+        }
+      }
+    }
     const sourceSession = requireSourceSession(binding)
     const previousState = sourceSession.events.findLast(event => event.type === 'voice/agent-binding-state')
     const previousBound = sourceSession.events.findLast(event => event.type === 'voice/task-session-bound')
@@ -532,8 +630,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           : undefined
     if (previousTaskSessionId !== undefined) {
       try {
-        const resumed = await resumeTaskAgent(binding, previousTaskSessionId)
-        const resource = { taskSessionId: previousTaskSessionId, ...resumed }
+        const resumed = await resumeTaskAgent(binding, previousTaskSessionId, selection)
+        const resource = { taskSessionId: previousTaskSessionId, selection, sourceHeaderSeq, ...resumed }
         binding.continuousTaskAgent = resource
         taskBindings.set(resource.taskSessionId, binding)
         return resource
@@ -542,8 +640,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     }
     const taskSessionId = SessionId(`session-${randomUUID()}`)
-    const created = await createTaskAgent(binding, taskSessionId)
-    const resource = { taskSessionId, ...created }
+    const created = await createTaskAgent(binding, taskSessionId, selection)
+    const resource = { taskSessionId, selection, sourceHeaderSeq, ...created }
     binding.continuousTaskAgent = resource
     taskBindings.set(taskSessionId, binding)
     sourceSession.append('voice/task-session-bound', { taskSessionId })
@@ -739,7 +837,8 @@ export function apply(ctx: Context, config: Config = {}): void {
             created = await ensureContinuousTaskAgent(binding)
           } else {
             const taskSessionId = SessionId(`session-${randomUUID()}`)
-            created = { taskSessionId, ...await createTaskAgent(binding, taskSessionId) }
+            const { selection } = taskModelSelection(binding)
+            created = { taskSessionId, ...await createTaskAgent(binding, taskSessionId, selection) }
           }
         } catch (error) { backendUnavailable(error); return }
         const message = createUserMessage({
@@ -952,6 +1051,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         return
       case 'output_audio.started':
+        debugVoiceLatency('audio-started')
+        return
       case 'output_audio.delta':
       case 'output_audio.done':
       case 'task.observation':
@@ -1087,6 +1188,13 @@ type FrontendRoute =
 
 const DEFAULT_DELEGATION_ACKNOWLEDGEMENT = '好的，我先查看一下。'
 const MAX_DELEGATION_ACKNOWLEDGEMENT_LENGTH = 40
+const VOICE_LATENCY_DEBUG_PREFIX = '[DEBUG-VOICE-LATENCY]'
+
+function debugVoiceLatency(...values: unknown[]): void {
+  const processLike = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+  if (processLike?.env?.DSH_VOICE_LATENCY_DEBUG !== '1') return
+  console.info(VOICE_LATENCY_DEBUG_PREFIX, new Date().toISOString(), ...values)
+}
 
 function delegationAcknowledgement(value: unknown): string {
   if (typeof value !== 'string') return DEFAULT_DELEGATION_ACKNOWLEDGEMENT
@@ -1195,6 +1303,17 @@ function observeSessionEvent(
   }
   if (event.type !== 'turn/end' || event.data.turn !== task.taskTurn) return false
   const status = terminalStatus(event.data.reason.kind)
+  const failureReason = status === 'failed'
+    ? event.data.reason.kind === 'error'
+      ? event.data.reason.error.message
+      : event.data.reason.kind
+    : undefined
+  debugVoiceLatency('turn-end', {
+    taskId: task.id,
+    turn: task.taskTurn,
+    status,
+    ...(failureReason === undefined ? {} : { failureReason }),
+  })
   if (status === 'completed' && task.waitingUser && task.completionDetail === undefined) {
     delete task.taskTurn
     delete task.lastAssistantMessage
@@ -1231,7 +1350,7 @@ function observeSessionEvent(
       voiceMessage: message,
     }),
     ...(announcement === undefined ? {} : { announcement }),
-    ...(status === 'failed' ? { reason: event.data.reason.kind } : {}),
+    ...(failureReason === undefined ? {} : { reason: failureReason }),
   }, message !== undefined || announcement !== undefined, true)
   if (rewriteFinalResult) rewrite(task, resultText)
   const disposeVoiceMessage = task.disposeVoiceMessage

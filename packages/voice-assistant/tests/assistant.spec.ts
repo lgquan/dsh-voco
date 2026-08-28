@@ -343,6 +343,104 @@ describe('voice assistant driver', () => {
     expect(routePrompt).toContain('不能声称任务已经完成')
   })
 
+  it('recreates a continuous voice task Agent after the selected provider or model changes', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const createdAgents = installAgentFactory(ctx)
+    await ctx.plugin(AgentDefaultModel, { provider: 'provider-a', model: 'model-a' })
+    let currentSelection = { provider: 'provider-a', model: 'model-a' }
+    vi.spyOn(ctx.agentDefaultModel, 'currentSelection').mockImplementation(() => currentSelection)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(VoiceRuntime, { provider: 'test' })
+
+    let emit: ((event: VoiceProviderEvent) => void) | undefined
+    const providerSession: VoiceProviderSession = {
+      audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
+      interactionMode: 'frontend-agent',
+      appendAudio: () => {}, commitAudio: () => {}, interruptResponse: () => {}, playbackEnded: () => {},
+      appendTaskObservation: () => {},
+      requestResponse: () => {},
+      completeTaskCommand: () => {},
+      close: () => Promise.resolve(),
+    }
+    ctx.voice.registerProvider({
+      id: 'test', available: () => true,
+      connect: (input) => { emit = input.emit; return Promise.resolve(providerSession) },
+    })
+
+    const source = ctx.sessions.create(SessionId('voice-model-switch'))
+    source.append('request/header', {
+      header: { config: { provider: 'provider-a', model: 'model-a' } },
+    })
+    const sourceAgent = {
+      id: source.id,
+      options: { provider: 'provider-a', model: 'model-a' },
+      session: source,
+      inbox: {} as Agent['inbox'],
+      status: 'idle' as const,
+      ctx,
+      cancel: vi.fn(),
+      whenIdle: () => Promise.resolve(),
+      runMaintenance: () => Promise.reject(new Error('not used')),
+      send: () => {}, steer: vi.fn(), inject: () => {}, followup: vi.fn(),
+    } satisfies Agent
+    ctx.agents.register(sourceAgent)
+    await ctx.plugin({ apply, inject }, { taskSessionPolicy: 'continuous' })
+    await ctx.voice.open(source.id)
+
+    emit?.({
+      type: 'task.command',
+      call: {
+        id: VoiceCommandCallId('first-model'),
+        command: { type: 'realtime_delegation', input: 'first task' },
+      },
+    })
+    await settle()
+    const first = createdAgents[0]
+    if (first === undefined) throw new Error('first continuous Agent was not created')
+    expect(first.agent.options).toMatchObject({ provider: 'provider-a', model: 'model-a' })
+    const firstMessage = first.followup.mock.calls[0]?.[0]
+    if (firstMessage === undefined) throw new Error('first continuous message missing')
+    first.session.append('turn/start', { turn: 1 })
+    ctx.emit('agent/inbox/claimed', { agent: first.agent, message: firstMessage, turn: 1 })
+    first.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await settle()
+
+    currentSelection = { provider: 'provider-b', model: 'model-b' }
+    emit?.({
+      type: 'task.command',
+      call: {
+        id: VoiceCommandCallId('second-model'),
+        command: { type: 'realtime_delegation', input: 'second task' },
+      },
+    })
+    await settle()
+
+    expect(createdAgents).toHaveLength(2)
+    const second = createdAgents[1]
+    expect(second?.agent.options).toMatchObject({ provider: 'provider-b', model: 'model-b' })
+    const secondMessage = second?.followup.mock.calls[0]?.[0]
+    if (second === undefined || secondMessage === undefined) throw new Error('second continuous message missing')
+    second.session.append('turn/start', { turn: 1 })
+    ctx.emit('agent/inbox/claimed', { agent: second.agent, message: secondMessage, turn: 1 })
+    second.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await settle()
+
+    emit?.({
+      type: 'task.command',
+      call: {
+        id: VoiceCommandCallId('third-model'),
+        command: { type: 'realtime_delegation', input: 'third task' },
+      },
+    })
+    await settle()
+
+    expect(createdAgents).toHaveLength(2)
+    expect(second.followup).toHaveBeenCalledTimes(2)
+  })
+
   it('lets a frontend voice Agent drive one exact text-Agent task', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
