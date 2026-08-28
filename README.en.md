@@ -21,10 +21,10 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 pnpm install
 pnpm build
 $repo = (Resolve-Path .).Path
-dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "$repo\packages\voice-local" "$repo\packages\voice-assistant" "$repo\packages\voice-web" "$repo\packages\ui-voice"
+dsh plugin --profile web add "$repo\packages\voice-app"
 ```
 
-The project is named `dsh-voco`, and all internal packages use the `@lgquan/*` namespace.
+The public installation entry is `@lgquan/dsh-voco`, sourced from `packages/voice-app`. The remaining `@lgquan/*` packages are internal feature modules installed transitively, so they do not need to be added one by one.
 
 The `dsh` command comes from `npm install -g @deepseek-ai/dsh`. Launch web (the voice surface loads with it):
 

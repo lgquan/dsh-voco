@@ -1,4 +1,4 @@
-# `@lgquan/dsh-voice-agent`
+# `@lgquan/dsh-voco`
 
 English | [中文](README.zh.md)
 

@@ -1,5 +1,5 @@
 {
-  "name": "@lgquan/dsh-voice-agent",
+  "name": "@lgquan/dsh-voco",
   "description": "Voice interaction profile patch layered over dsh-web-app",
   "version": "0.1.2",
   "publishConfig": {
