@@ -129,7 +129,42 @@ describe('Voice Conversation Definitions', () => {
       }),
     ]))
 
-    expect(nodes).toEqual([])
+    expect(nodes).toMatchObject([{
+      kind: 'voice-utterance',
+      visibility: 'hidden',
+      data: { utteranceId: noiseId, state: 'interrupted', text: '' },
+    }])
+  })
+
+  it('hides a live empty utterance without blocking later realtime messages', () => {
+    const noiseId = VoiceUtteranceId('live-noise')
+    const assistantId = VoiceUtteranceId('assistant-after-noise')
+    const value = assembler([
+      at(1, 'voice/utterance-start', { utteranceId: noiseId, role: 'user' }),
+    ])
+    expect(chatNodes(value)[0]).toMatchObject({
+      visibility: 'visible',
+      data: { utteranceId: noiseId, state: 'streaming' },
+    })
+
+    value.append(at(2, 'voice/utterance-end', {
+      utteranceId: noiseId, role: 'user', text: '', state: 'interrupted',
+    }))
+    expect(() => { value.flush() }).not.toThrow()
+    expect(chatNodes(value)[0]).toMatchObject({
+      visibility: 'hidden',
+      data: { utteranceId: noiseId, state: 'interrupted' },
+    })
+
+    value.append(at(3, 'voice/utterance-start', { utteranceId: assistantId, role: 'assistant' }))
+    value.append(at(4, 'voice/utterance-end', {
+      utteranceId: assistantId, role: 'assistant', text: '后续消息正常显示', state: 'completed',
+    }))
+    value.flush()
+    expect(chatNodes(value).at(-1)).toMatchObject({
+      visibility: 'visible',
+      data: { utteranceId: assistantId, text: '后续消息正常显示', state: 'completed' },
+    })
   })
 
   it('keeps update-only tails pending until their starts are prepended', () => {

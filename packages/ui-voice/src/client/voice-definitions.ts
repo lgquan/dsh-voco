@@ -67,7 +67,8 @@ export const voiceUtteranceDefinition: ConversationNodeDefinition<VoiceUtterance
   },
   buildViewNode: (context): ChatConversationViewNode | null => {
     if (context.start === undefined || context.state === undefined) return null
-    if (context.state.state === 'interrupted' && (context.state.text?.trim() ?? '') === '') return null
+    const emptyInterrupted = context.state.state === 'interrupted'
+      && (context.state.text?.trim() ?? '') === ''
     return {
       key: context.key,
       kind: 'voice-utterance',
@@ -75,7 +76,10 @@ export const voiceUtteranceDefinition: ConversationNodeDefinition<VoiceUtterance
       target: 'chat',
       anchorSeq: context.start.event.seq,
       location: context.start.location,
-      visibility: 'visible',
+      // A live start may already be materialized before an empty noise segment
+      // settles. Conversation nodes cannot be withdrawn after publication, so
+      // keep its stable identity and hide it instead.
+      visibility: emptyInterrupted ? 'hidden' : 'visible',
       data: context.state as VoiceUtteranceState,
     }
   },
