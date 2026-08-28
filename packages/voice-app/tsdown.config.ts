@@ -7,7 +7,7 @@ import { clientBundle } from '../../tsdown.client.ts'
  * identities and normal dependency installation semantics are preserved.
  */
 const serverPlugins: UserConfig = {
-  name: '@lgquan/dsh-voco/plugins',
+  name: '@flowingspring/dsh-voco/plugins',
   entry: {
     'plugins/llm-tool-call-compat': '../llm-tool-call-compat/src/index.ts',
     'plugins/voice': '../voice/src/index.ts',
@@ -25,7 +25,7 @@ const serverPlugins: UserConfig = {
   noExternal: [/^@lgquan\//],
 }
 
-export default clientBundle('@lgquan/dsh-voco', [
+export default clientBundle('@flowingspring/dsh-voco', [
   'lib/types/index.js',
   'lib/types/invariant.js',
 ], {

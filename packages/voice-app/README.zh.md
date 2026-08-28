@@ -1,4 +1,4 @@
-# `@lgquan/dsh-voco`
+# `@flowingspring/dsh-voco`
 
 [English](README.md) | 中文
 

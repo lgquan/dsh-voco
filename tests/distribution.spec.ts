@@ -13,7 +13,7 @@ describe('dsh-voco distribution interface', () => {
       dsh?: { bundle?: unknown; client?: unknown }
     }
 
-    expect(manifest.name).toBe('@lgquan/dsh-voco')
+    expect(manifest.name).toBe('@flowingspring/dsh-voco')
     expect(Object.keys(manifest.dependencies ?? {}).filter(name => name.startsWith('@lgquan/'))).toEqual([])
     expect(manifest.dsh?.bundle).toBeDefined()
     expect(manifest.dsh?.client).toBeDefined()
@@ -33,12 +33,12 @@ describe('dsh-voco distribution interface', () => {
     const packageNames = [...patch.matchAll(/^\s+name: '([^']+)'$/gm)].map(match => match[1])
 
     expect(packageNames).toEqual([
-      '@lgquan/dsh-voco/llm-tool-call-compat',
-      '@lgquan/dsh-voco/voice',
-      '@lgquan/dsh-voco/voice-local',
-      '@lgquan/dsh-voco/voice-assistant',
-      '@lgquan/dsh-voco/voice-web',
-      '@lgquan/dsh-voco',
+      '@flowingspring/dsh-voco/llm-tool-call-compat',
+      '@flowingspring/dsh-voco/voice',
+      '@flowingspring/dsh-voco/voice-local',
+      '@flowingspring/dsh-voco/voice-assistant',
+      '@flowingspring/dsh-voco/voice-web',
+      '@flowingspring/dsh-voco',
     ])
   })
 })

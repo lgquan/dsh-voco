@@ -24,7 +24,15 @@ $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app"
 ```
 
-对外安装入口是 `@lgquan/dsh-voco`，源码位于 `packages/voice-app`；其余 `@lgquan/*` workspace 只是内部开发模块，其服务端入口和浏览器界面都会打包进 `@lgquan/dsh-voco`，不会作为用户插件安装。
+对外安装入口是 `@flowingspring/dsh-voco`，源码位于 `packages/voice-app`；其余 workspace 只是内部开发模块，其服务端入口和浏览器界面都会打包进 `@flowingspring/dsh-voco`，不会作为用户插件安装。
+
+发布包只需要安装这一个包：
+
+```powershell
+dsh plugin --profile web add @flowingspring/dsh-voco
+```
+
+如果从源码开发，仍可使用上面的本地路径安装方式；这不会改变最终发行包的单包结构。
 
 `dsh` 命令来自 `npm install -g @deepseek-ai/dsh`。启动 web（voice 界面随之加载）：
 

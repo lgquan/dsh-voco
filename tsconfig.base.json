@@ -59,10 +59,10 @@
       "@lgquan/dsh-client-ui-voice/client": [
         "./packages/ui-voice/src/client"
       ],
-      "@lgquan/dsh-voco": [
+      "@flowingspring/dsh-voco": [
         "./packages/voice-app/src"
       ],
-      "@lgquan/dsh-voco/invariant": [
+      "@flowingspring/dsh-voco/invariant": [
         "./packages/voice-app/src/invariant.ts"
       ],
       "@lgquan/dsh-llm-tool-call-compat": [
