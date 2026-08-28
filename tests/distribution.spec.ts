@@ -19,6 +19,7 @@ describe('dsh-voco distribution interface', () => {
     expect(manifest.dsh?.client).toBeDefined()
     expect(Object.keys(manifest.exports ?? {})).toEqual(expect.arrayContaining([
       '.',
+      './client',
       './llm-tool-call-compat',
       './voice',
       './voice-local',
