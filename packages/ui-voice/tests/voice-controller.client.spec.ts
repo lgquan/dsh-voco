@@ -597,17 +597,20 @@ describe('VoiceController', () => {
     await controller.stop()
   })
 
-  it('stops queued audio on barge-in and reports unexpected close and provider errors', async () => {
+  it('stops queued audio only after confirmed speech and reports unexpected close and provider errors', async () => {
     const controller = new VoiceController()
     const socket = await start(controller)
     socket.binary(new Int16Array([1]).buffer)
     const source = contexts[1]!.sources[0]!
     source.stop.mockImplementationOnce(() => { throw new Error('already stopped') })
     socket.json({ type: 'transcription.started', utteranceId: 'user-1' })
-    expect(source.stop).toHaveBeenCalledTimes(1)
+    expect(source.stop).not.toHaveBeenCalled()
+    socket.json({ type: 'transcription.completed', utteranceId: 'user-1', text: '你好' })
+    expect(source.stop).not.toHaveBeenCalled()
     socket.json({ type: 'output_audio.started', responseId: 'response-2' })
     expect(controller.getSnapshot().state).toBe('speaking')
     socket.json({ type: 'response.interrupted', responseId: 'response-2' })
+    expect(source.stop).toHaveBeenCalledTimes(1)
     expect(controller.getSnapshot().state).toBe('listening')
     socket.json({ type: 'error', message: 'provider failed' })
     expect(controller.getSnapshot().state).toBe('error')

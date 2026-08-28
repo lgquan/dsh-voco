@@ -122,12 +122,14 @@ export class LocalSession implements VoiceProviderSession {
       case 'transcription.completed': {
         const utteranceId = VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId)
         this.emit({ type: 'transcription.completed', utteranceId, text: event.text })
-        if (this.interactionMode === 'frontend-agent' && event.text.trim() !== '') {
-          const text = event.text.trim()
+        const text = event.text.trim()
+        if (text === '') return
+        if (this.interactionMode === 'frontend-agent') {
           this.emitTaskCommand(this.activeTaskId === undefined
             ? { type: 'route_transcription', input: text }
             : { type: 'send_task_message', taskId: this.activeTaskId, message: text })
         }
+        this.interruptResponse()
         return
       }
       case 'transcription.failed': this.emit({ type: 'transcription.failed', utteranceId: VoiceUtteranceId(String(this.voiceSessionId) + ':input:' + event.utteranceId), message: event.message }); return

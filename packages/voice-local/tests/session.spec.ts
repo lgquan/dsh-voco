@@ -64,7 +64,12 @@ describe('LocalSession', () => {
     )
     await session.start()
     backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-2', text: '检查项目状态' })
+    expect(backend.interrupt).toHaveBeenCalledTimes(1)
+    expect(events.slice(0, 3).map(event => (event as { type?: string }).type)).toEqual([
+      'transcription.completed', 'task.command', 'response.interrupted',
+    ])
     backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-3', text: '   ' })
+    expect(backend.interrupt).toHaveBeenCalledTimes(1)
 
     expect(events).toEqual(expect.arrayContaining([{
       type: 'task.command',
@@ -85,14 +90,14 @@ describe('LocalSession', () => {
     )) as { call: { id: never } }
     session.completeTaskCommand(taskCommand.call.id, { kind: 'accepted', taskId: VoiceTaskId('task-fixed') })
     backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-4', text: '再检查测试' })
-    expect(events.at(-1)).toMatchObject({
+    expect(events.findLast(event => (event as { type?: string }).type === 'task.command')).toMatchObject({
       type: 'task.command',
       call: { command: { type: 'send_task_message', taskId: 'task-fixed', message: '再检查测试' } },
     })
 
     session.appendTaskObservation({ taskId: VoiceTaskId('task-fixed'), status: 'completed' })
     backend.emit?.({ type: 'transcription.completed', utteranceId: 'input-5', text: '开始下一项' })
-    expect(events.at(-1)).toMatchObject({
+    expect(events.findLast(event => (event as { type?: string }).type === 'task.command')).toMatchObject({
       type: 'task.command',
       call: { command: { type: 'route_transcription', input: '开始下一项' } },
     })

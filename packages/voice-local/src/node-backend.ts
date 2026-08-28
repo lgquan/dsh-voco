@@ -177,7 +177,6 @@ export class NodeSpeechBackend implements SpeechBackend {
     const utterance = this.active
     if (utterance === undefined || utterance.confirmed) return
     utterance.confirmed = true
-    this.interrupt()
     this.emit?.({ type: 'transcription.started', utteranceId: utterance.id })
   }
 

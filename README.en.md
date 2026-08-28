@@ -8,7 +8,7 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 
 ## Interaction
 
-- **Cloud speech recognition**: browser audio uses only lightweight local level detection. After 1.5 seconds of silence, the utterance is wrapped as WAV and transcribed by SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra`. Replies use Edge TTS's Chinese Xiaoxiao voice with interruption support.
+- **Cloud speech recognition**: browser audio uses only lightweight local level detection. After 1.5 seconds of silence, the utterance is wrapped as WAV and transcribed by SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra`. Ambient noise or an empty transcription does not interrupt a reply in progress; playback stops only after valid text is recognized. Replies use Edge TTS's Chinese Xiaoxiao voice with interruption support.
 - **Acknowledge, then delegate**: after cloud ASR returns text, a lightweight frontend model routes the intent. Greetings and questions requiring no tools are answered directly; tool-requiring work gets an immediate one-sentence acknowledgement before entering the fixed background Agent through `realtime_delegation`.
 - **Continuous task context**: sequential delegations reuse one background Agent Session while retaining distinct delegation ids.
 - **Independent conversational results**: the background Agent reports `progress | result | warning | error | question` events with complete facts in the sole `detail` field. The Voice layer rewrites detail against the original request and submits the coherent reply as one UI message and one TTS response. Edge TTS may synthesize sentences internally without creating separate chat bubbles.

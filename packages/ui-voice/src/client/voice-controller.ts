@@ -372,7 +372,7 @@ async function openVoiceTransport(
     let event: unknown
     try { event = JSON.parse(String(message.data)) } catch { return }
     const record = recordOf(event)
-    if (record?.type === 'transcription.started' || record?.type === 'response.interrupted') stopPlayback()
+    if (record?.type === 'response.interrupted') stopPlayback()
     if (record?.type === 'output_audio.done') {
       outputDone = true
       notifyPlaybackEnded()
