@@ -1,31 +1,55 @@
 # `@flowingspring/dsh-voco`
 
+[![npm version](https://img.shields.io/npm/v/@flowingspring/dsh-voco.svg)](https://www.npmjs.com/package/@flowingspring/dsh-voco)
+[![许可证](https://img.shields.io/npm/l/@flowingspring/dsh-voco.svg)](https://github.com/lgquan/dsh-voco/blob/master/LICENSE)
+
 [English](README.md) | 中文
 
-浏览器 PCM 只在本地做轻量静音检测，连续静音三秒后以 WAV 上传硅基流动完成识别。
+面向 DSH Web UI 的可恢复、可打断语音对话插件。你可以自然说出需求、立即获得口语回复，并把需要工具的工作委派给持续复用的后台 Agent Session，而不会丢失任务上下文。
 
-`dsh-voco` 的 `voice` profile patch-layer bundle。它把 provider transport 直接挂到当前来源 Session，并从持久化的 `voice/utterance-end` 事件恢复最近对话。轻量前台模型直接回答普通对话，只委派需要工具的工作。同一来源 Session 的委派持续复用并持久绑定一个普通 Task Agent Session；`voice/agent-binding-state` 保存语音会话、后台 Agent、工作区、最后任务、最近使用时间和状态，服务重启后优先从该记录恢复，并兼容旧的 `voice/task-session-bound`。完整结果和进度保留在任务界面；独立模型结合用户原话重写最终结果以及需要用户处理的问题或警告。进度只显示在折叠任务详情中，不会额外创建语音消息或 TTS 请求。后台 Agent 不能直接指定播报文本。root 持有的音频在跳转期间持续运行，浏览器历史索引从侧栏展示已保存的 Voice Session。
+## 安装
 
-## 模型体验
+```sh
+dsh plugin --profile web add @flowingspring/dsh-voco
+dsh web
+```
 
-### 语音 profile 组合
+如果尚未安装 DSH 命令行：
 
-#### 模型看到什么
+```sh
+npm install -g @deepseek-ai/dsh
+```
 
-语音发起的工作只以已接受的 `realtime_delegation` 信封与准确 id 更新到达来源 Session 所绑定的固定后台 Task Agent。只有该 Task Agent 收到作用域内的 `send_voice_message` 后台工具，用于发送结构化的 `progress | result | warning | error | question` 事件；桥接层直接创建或恢复准确目标，因此不增加 project 列举工具。本地 provider 负责语音输入输出，桥接层只暴露任务编排工具。
+## 配置语音识别
 
-#### Token 影响
+在 DSH 的运行环境中设置[硅基流动](https://siliconflow.cn/) API Key：
 
-每个新的前台话语会消耗一次轻量模型路由调用。被委派的工作还会消耗任务执行、后台回报和辅助事件改写的模型 token；本地 VAD、ASR、TTS 不产生按分钟的语音 API 费用。
+```dotenv
+SILICONFLOW_API_KEY=你的密钥
+```
 
-#### KV Cache 影响
+插件使用 `XingChenAGI/XingChenASR-V3.2-Ultra` 完成云端语音识别，并通过 Edge TTS 的 `zh-CN-XiaoxiaoNeural` 音色输出语音。浏览器只在本地做轻量起音和静音检测，确认一句话结束后才上传音频。
 
-只有已接受的 command 扩展持续复用的 Task Agent 历史。持久绑定状态会在重启后恢复同一个 Agent Session；Voice Session 的最近话语用于恢复本地语音对话。
+## 主要功能
 
-## 已知限制与后续工作
+- 每个 Voice Session 持续绑定一个后台 Agent Session，重启 DSH 后也能恢复。
+- 普通聊天直接回答，只有需要工具的工作才委派给后台 Agent。
+- 完整任务报告保留在任务界面，语音只播报专门生成的简洁结果。
+- 支持语音打断、页面切换、断线重连以及历史对话恢复。
+- 服务端和浏览器界面统一通过一个公开 npm 包发行。
 
-- 随附的 provider 是本地 CPU 语音；service seam 保证 assistant consumer 不依赖模型细节。
-- 原始音频仍限于当前进程；新的 provider 连接会从已完成的持久 utterance 文本恢复有界上下文。
-- 服务停止时，活跃任务会持久标记为 `interrupted`。恢复时只告知最后一次已播报进度，不会自动重放任务或任何有副作用的命令。
-- 筛选后的语音历史索引只属于当前浏览器；清除站点数据不会删除底层 Session。
-- 浏览器客户端界面面向 dsh Web UI：它由复制而来的 dsh client tsdown 预设构建，并通过 dsh web 运行时的 `window.__ModuleLoader__` 契约加载。服务端包与传输无关，但麦克风／播放 UI 不是独立浏览器插件。
+## 配置项
+
+默认以连续静音 1.5 秒作为一句话的边界。`silenceDurationMs`、`speechThreshold`、`minSpeechDurationMs` 和 `maxUtteranceMs` 等高级参数可在插件 profile 配置中调整。
+
+## 要求与限制
+
+- 麦克风和播放界面面向 DSH Web UI，并不是框架无关的浏览器插件。
+- 云端语音识别需要网络连接及硅基流动 API Key。
+- 语音回复目前默认使用 Edge TTS 的中文晓晓音色。
+
+源码、开发说明和问题反馈请前往 [GitHub 仓库](https://github.com/lgquan/dsh-voco)。
+
+## 许可证
+
+[MIT](LICENSE)

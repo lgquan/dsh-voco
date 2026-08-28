@@ -1,7 +1,20 @@
 {
   "name": "@flowingspring/dsh-voco",
-  "description": "Voice interaction profile patch layered over dsh-web-app",
-  "version": "0.2.0",
+  "description": "Persistent voice conversations for DSH with cloud speech recognition, Edge TTS, and background Agent delegation",
+  "version": "0.2.1",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "voice",
+    "speech-recognition",
+    "text-to-speech",
+    "agent"
+  ],
+  "homepage": "https://github.com/lgquan/dsh-voco#readme",
+  "bugs": {
+    "url": "https://github.com/lgquan/dsh-voco/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
