@@ -120,6 +120,18 @@ describe('Voice Conversation Definitions', () => {
     })
   })
 
+  it('omits empty interrupted utterances from the chat view', () => {
+    const noiseId = VoiceUtteranceId('ambient-noise')
+    const nodes = chatNodes(assembler([
+      at(1, 'voice/utterance-start', { utteranceId: noiseId, role: 'user' }),
+      at(2, 'voice/utterance-end', {
+        utteranceId: noiseId, role: 'user', text: '', state: 'interrupted',
+      }),
+    ]))
+
+    expect(nodes).toEqual([])
+  })
+
   it('keeps update-only tails pending until their starts are prepended', () => {
     const value = assembler([events[1]!], true)
     expect(chatNodes(value)).toHaveLength(0)

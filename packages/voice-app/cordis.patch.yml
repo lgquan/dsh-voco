@@ -16,6 +16,7 @@
         outputSampleRate: 48000
         silenceDurationMs: 3000
         speechThreshold: 0.015
+        minSpeechDurationMs: 250
         maxUtteranceMs: 60000
 
     - id: voice-assistant

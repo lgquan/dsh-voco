@@ -22,6 +22,7 @@ export interface Config {
   readonly outputSampleRate?: number
   readonly silenceDurationMs?: number
   readonly speechThreshold?: number
+  readonly minSpeechDurationMs?: number
   readonly preRollMs?: number
   readonly trailingSilenceMs?: number
   readonly maxUtteranceMs?: number
@@ -37,6 +38,7 @@ export const Config: z<Config> = z.object({
   outputSampleRate: z.natural().min(1).default(48_000),
   silenceDurationMs: z.natural().min(100).default(3_000),
   speechThreshold: z.number().min(0.001).max(0.5).default(0.015),
+  minSpeechDurationMs: z.natural().min(20).default(250),
   preRollMs: z.natural().default(400),
   trailingSilenceMs: z.natural().default(200),
   maxUtteranceMs: z.natural().min(1_000).default(60_000),
@@ -60,6 +62,7 @@ export function apply(ctx: Context, config: Config = {}): () => void {
         outputSampleRate: config.outputSampleRate ?? 48_000,
         silenceDurationMs: config.silenceDurationMs ?? 3_000,
         speechThreshold: config.speechThreshold ?? 0.015,
+        minSpeechDurationMs: config.minSpeechDurationMs ?? 250,
         preRollMs: config.preRollMs ?? 400,
         trailingSilenceMs: config.trailingSilenceMs ?? 200,
         maxUtteranceMs: config.maxUtteranceMs ?? 60_000,

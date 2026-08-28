@@ -40,7 +40,7 @@ Create `.env` in the repository root and configure the SiliconFlow API key:
 SILICONFLOW_API_KEY=your-key
 ```
 
-`.env` is ignored by Git. The default boundary is `3000ms` of continuous silence; tune `silenceDurationMs`, `speechThreshold`, and `maxUtteranceMs` in `packages/voice-app/cordis.patch.yml`. No local ASR/VAD models, Python, pip, PyTorch, or ONNX runtime are required. Replies continue to use Edge TTS with `zh-CN-XiaoxiaoNeural`.
+`.env` is ignored by Git. The default boundary is `3000ms` of continuous silence, with at least `250ms` of voiced audio required to confirm speech onset; tune `silenceDurationMs`, `speechThreshold`, `minSpeechDurationMs`, and `maxUtteranceMs` in `packages/voice-app/cordis.patch.yml`. No local ASR/VAD models, Python, pip, PyTorch, or ONNX runtime are required. Replies continue to use Edge TTS with `zh-CN-XiaoxiaoNeural`.
 
 ## Limitations
 

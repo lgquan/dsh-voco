@@ -66,7 +66,8 @@ export const voiceUtteranceDefinition: ConversationNodeDefinition<VoiceUtterance
     }
   },
   buildViewNode: (context): ChatConversationViewNode | null => {
-    if (context.start === undefined) return null
+    if (context.start === undefined || context.state === undefined) return null
+    if (context.state.state === 'interrupted' && (context.state.text?.trim() ?? '') === '') return null
     return {
       key: context.key,
       kind: 'voice-utterance',

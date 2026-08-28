@@ -50,7 +50,7 @@ describe('SiliconFlow cloud ASR', () => {
       apiKey: 'test-key', endpoint: 'https://example.test/asr', model: 'test-model',
       requestTimeoutMs: 1_000, inputSampleRate: 16_000, outputSampleRate: 48_000,
       silenceDurationMs: 400, speechThreshold: 0.01, preRollMs: 200,
-      trailingSilenceMs: 100, maxUtteranceMs: 5_000, fetch,
+      trailingSilenceMs: 100, maxUtteranceMs: 5_000, minSpeechDurationMs: 200, fetch,
     })
     const events: SpeechBackendEvent[] = []
     await backend.start(event => events.push(event))
@@ -65,6 +65,29 @@ describe('SiliconFlow cloud ASR', () => {
     })
     expect(fetch).toHaveBeenCalledOnce()
     await backend.close()
+  })
+
+  it('ignores a short noise spike without uploading or opening a transcription', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => (
+      new Response(JSON.stringify({ text: '' }), { status: 200 })
+    ))
+    const backend = new NodeSpeechBackend({
+      apiKey: 'test-key', endpoint: 'https://example.test/asr', model: 'test-model',
+      requestTimeoutMs: 1_000, inputSampleRate: 16_000, outputSampleRate: 48_000,
+      silenceDurationMs: 400, speechThreshold: 0.01, preRollMs: 200,
+      trailingSilenceMs: 100, maxUtteranceMs: 5_000, fetch,
+    })
+    const events: SpeechBackendEvent[] = []
+    await backend.start(event => events.push(event))
+
+    backend.appendAudio(pcmFrame(0.2, 80))
+    backend.appendAudio(pcmFrame(0, 400))
+    await Promise.resolve()
+    await Promise.resolve()
+    await backend.close()
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(events.filter(event => event.type.startsWith('transcription.'))).toEqual([])
   })
 })
 

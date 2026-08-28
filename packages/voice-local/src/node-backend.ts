@@ -15,6 +15,8 @@ export interface NodeSpeechConfig {
   readonly outputSampleRate: number
   readonly silenceDurationMs: number
   readonly speechThreshold: number
+  /** Minimum accumulated voiced audio before a candidate becomes an utterance. */
+  readonly minSpeechDurationMs?: number
   readonly preRollMs: number
   readonly trailingSilenceMs: number
   readonly maxUtteranceMs: number
@@ -24,6 +26,7 @@ export interface NodeSpeechConfig {
 interface ActiveUtterance {
   readonly id: string
   readonly frames: Uint8Array[]
+  confirmed: boolean
   totalBytes: number
   voicedBytes: number
   silenceBytes: number
@@ -47,6 +50,7 @@ export class NodeSpeechBackend implements SpeechBackend {
     if (config.inputSampleRate !== INPUT_SAMPLE_RATE) throw new Error('SiliconFlow speech input requires 16000 Hz microphone audio')
     if (config.apiKey.trim() === '') throw new Error('SILICONFLOW_API_KEY is required for cloud speech recognition')
     if (config.speechThreshold <= 0 || config.speechThreshold >= 1) throw new Error('speechThreshold must be between 0 and 1')
+    if ((config.minSpeechDurationMs ?? 250) <= 0) throw new Error('minSpeechDurationMs must be greater than 0')
     this.audio = { inputSampleRate: config.inputSampleRate, outputSampleRate: config.outputSampleRate, format: 'audio_mpeg' }
     this.asr = new SiliconFlowAsr({
       apiKey: config.apiKey,
@@ -83,8 +87,15 @@ export class NodeSpeechBackend implements SpeechBackend {
     if (voiced) {
       this.active.voicedBytes += frame.byteLength
       this.active.silenceBytes = 0
+      if (!this.active.confirmed && this.active.voicedBytes >= this.bytesFor(this.config.minSpeechDurationMs ?? 250)) {
+        this.confirmUtterance()
+      }
     } else {
       this.active.silenceBytes += frame.byteLength
+    }
+    if (!this.active.confirmed && this.active.silenceBytes >= this.bytesFor(this.config.minSpeechDurationMs ?? 250)) {
+      this.active = undefined
+      return
     }
     if (this.active.silenceBytes >= this.bytesFor(this.config.silenceDurationMs)
       || this.active.totalBytes >= this.bytesFor(this.config.maxUtteranceMs)) this.finishUtterance()
@@ -152,12 +163,20 @@ export class NodeSpeechBackend implements SpeechBackend {
     this.active = {
       id: randomUUID(),
       frames,
+      confirmed: false,
       totalBytes,
       voicedBytes: last?.byteLength ?? 0,
       silenceBytes: 0,
     }
+    if (this.active.voicedBytes >= this.bytesFor(this.config.minSpeechDurationMs ?? 250)) this.confirmUtterance()
+  }
+
+  private confirmUtterance(): void {
+    const utterance = this.active
+    if (utterance === undefined || utterance.confirmed) return
+    utterance.confirmed = true
     this.interrupt()
-    this.emit?.({ type: 'transcription.started', utteranceId: this.active.id })
+    this.emit?.({ type: 'transcription.started', utteranceId: utterance.id })
   }
 
   private finishUtterance(): void {
@@ -167,10 +186,8 @@ export class NodeSpeechBackend implements SpeechBackend {
     const keepSilence = this.bytesFor(this.config.trailingSilenceMs)
     const trimBytes = Math.max(0, utterance.silenceBytes - keepSilence)
     const pcm = concatFrames(utterance.frames, Math.max(0, utterance.totalBytes - trimBytes))
-    if (utterance.voicedBytes === 0 || pcm.byteLength === 0) {
-      this.emit?.({ type: 'transcription.failed', utteranceId: utterance.id, message: '没有检测到可识别的语音。' })
-      return
-    }
+    if (!utterance.confirmed || utterance.voicedBytes < this.bytesFor(this.config.minSpeechDurationMs ?? 250)
+      || pcm.byteLength === 0) return
     this.recognitionQueue = this.recognitionQueue.catch(() => {}).then(async () => {
       if (this.closed) return
       try {

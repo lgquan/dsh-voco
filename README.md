@@ -40,7 +40,7 @@ dsh web
 SILICONFLOW_API_KEY=你的密钥
 ```
 
-`.env` 已被 Git 忽略。默认连续静音 `3000ms` 后上传一句话；可在 `packages/voice-app/cordis.patch.yml` 中调整 `silenceDurationMs`、`speechThreshold` 和 `maxUtteranceMs`。本地不再下载或加载 ASR/VAD 模型，也不要求 Python、pip、PyTorch 或 ONNX；语音回复继续使用 Edge TTS 和 `zh-CN-XiaoxiaoNeural` 音色。
+`.env` 已被 Git 忽略。默认连续静音 `3000ms` 后上传一句话，且需要至少 `250ms` 的有效音量才会确认起音；可在 `packages/voice-app/cordis.patch.yml` 中调整 `silenceDurationMs`、`speechThreshold`、`minSpeechDurationMs` 和 `maxUtteranceMs`。本地不再下载或加载 ASR/VAD 模型，也不要求 Python、pip、PyTorch 或 ONNX；语音回复继续使用 Edge TTS 和 `zh-CN-XiaoxiaoNeural` 音色。
 
 ## 限制
 
