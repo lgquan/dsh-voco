@@ -523,6 +523,33 @@ describe('voice runtime', () => {
     expect(events).toEqual([{ type: 'task.command', call }])
   })
 
+  it('projects browser-typed text as a transcript and routes it through the voice command boundary', async () => {
+    const ctx = new Context()
+    await ctx.plugin(VoiceRuntime, { provider: 'test' })
+    const connected = providerSession()
+    ctx.voice.registerProvider({
+      id: 'test', available: () => true, connect: () => Promise.resolve(connected.session),
+    })
+    const opened = await ctx.voice.open(SessionId('typed-voice-source'))
+    const events: unknown[] = []
+    ctx.voice.subscribe(opened.id, event => { events.push(event) })
+
+    ctx.voice.submitText(opened.id, '  手动输入也请语音回复  ')
+
+    expect(connected.spies.interruptResponse).toHaveBeenCalledOnce()
+    expect(events).toEqual([
+      expect.objectContaining({ type: 'transcription.started' }),
+      expect.objectContaining({ type: 'transcription.completed', text: '手动输入也请语音回复' }),
+      expect.objectContaining({
+        type: 'task.command',
+        call: expect.objectContaining({
+          command: { type: 'route_transcription', input: '手动输入也请语音回复' },
+        }),
+      }),
+    ])
+    expect(() => { ctx.voice.submitText(opened.id, '   ') }).toThrow('requires non-empty text')
+  })
+
   it('rejects call-id reuse with changed arguments and fingerprints every command kind', async () => {
     const ctx = new Context()
     await ctx.plugin(VoiceRuntime, { provider: 'test' })

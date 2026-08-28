@@ -195,6 +195,24 @@ describe('VoiceController', () => {
     expect(() => { controller.cancelTask('task-42') }).toThrow('requires an active connection')
   })
 
+  it('submits typed text through voice and queues it while connecting', async () => {
+    const controller = new VoiceController()
+    const opening = controller.start(SESSION)
+    await vi.waitFor(() => { expect(sockets).toHaveLength(1) })
+    controller.submitText('  连接中的消息  ')
+    const socket = sockets[0]!
+    socket.open()
+    await Promise.resolve()
+    socket.ready()
+    await opening
+    expect(socket.sent).toContain(JSON.stringify({ type: 'text.submit', text: '连接中的消息' }))
+
+    controller.submitText('已经连接')
+    expect(socket.sent).toContain(JSON.stringify({ type: 'text.submit', text: '已经连接' }))
+    await controller.stop()
+    expect(() => { controller.submitText('离线') }).toThrow('requires an active connection')
+  })
+
   it('rejects malformed, unsupported, and provider-error ready payloads before microphone access', async () => {
     const invalid: Array<readonly [unknown, string]> = [
       [null, 'expected a ready event'],

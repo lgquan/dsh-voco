@@ -117,6 +117,15 @@ async function attach(ctx: Context, socket: WebSocket, rawUrl: string): Promise<
           command: { type: 'cancel_task', taskId: VoiceTaskId(taskId) },
         })
       }
+      else if (type === 'text.submit') {
+        const submitted = (control as Record<string, unknown>).text
+        if (typeof submitted !== 'string' || submitted.trim() === '') {
+          state.finalClose = true
+          socket.close(1008, 'text is required')
+          return
+        }
+        voice.submitText(session.id, submitted)
+      }
       else if (type === 'session.close') {
         state.finalClose = true
         unsubscribe?.()

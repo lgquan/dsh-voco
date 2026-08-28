@@ -42,6 +42,8 @@ SILICONFLOW_API_KEY=你的密钥
 
 `.env` 已被 Git 忽略。默认连续静音 `1500ms` 后上传一句话，且需要至少 `250ms` 的有效音量才会确认起音；可在 `packages/voice-app/cordis.patch.yml` 中调整 `silenceDurationMs`、`speechThreshold`、`minSpeechDurationMs` 和 `maxUtteranceMs`。本地不再下载或加载 ASR/VAD 模型，也不要求 Python、pip、PyTorch 或 ONNX；语音回复继续使用 Edge TTS 和 `zh-CN-XiaoxiaoNeural` 音色。
 
+语音连接在线时，从当前会话输入框手动提交的纯文本也会作为一次语音输入处理：页面显示同一条用户消息，回复继续进入口语化文本流并由 Edge TTS 播放。语音离线或消息带图片时仍使用 Harness 原生文字提交路径。
+
 ## 限制
 
 - 浏览器麦克风与播放界面面向 dsh Web UI：它由复制而来的 dsh client tsdown 预设构建，并通过 dsh web 运行时的 `window.__ModuleLoader__` 契约加载，因此不是框架无关的浏览器插件。

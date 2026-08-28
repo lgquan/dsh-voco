@@ -479,8 +479,13 @@ describe('Voice UI assembly', () => {
     const start = vi.spyOn(VoiceController.prototype, 'start').mockResolvedValue(undefined)
     const stop = vi.spyOn(VoiceController.prototype, 'stop').mockResolvedValue(undefined)
     const retry = vi.spyOn(VoiceController.prototype, 'retry').mockResolvedValue(undefined)
+    const input = {
+      state: { getSnapshot: () => ({ draft: '', imageIds: [] }) },
+      setDraft: vi.fn(), submit: vi.fn(), notify: vi.fn(),
+    }
     const ctx = {
-      sessions: { open, list: { getSnapshot: () => listState() } },
+      sessions: { open, scope: () => ({}), list: { getSnapshot: () => listState() } },
+      conversation: { input: { for: () => input } },
       workspaces: { list: { getSnapshot: () => workspaceState() }, connectWorkspace },
       locale: { register: registerLocale },
       conversationEvents: { register: (definition: ConversationNodeDefinition) => { definitions.push(definition) } },
@@ -494,7 +499,7 @@ describe('Voice UI assembly', () => {
       },
     } as unknown as ClientContext
 
-    expect(inject).toEqual(['conversationEvents', 'slots', 'sessions', 'locale'])
+    expect(inject).toEqual(['conversation', 'conversationEvents', 'slots', 'sessions', 'locale'])
     apply(ctx)
     expect(definitions).toEqual([voiceUtteranceDefinition, voiceDelegationDefinition])
     expect(registrations.map(entry => [entry.options.name, entry.options.id ?? entry.options.key])).toEqual([
@@ -550,7 +555,9 @@ describe('Voice UI assembly', () => {
     const dispose = effects[1]!() as () => Promise<void>
     await dispose()
     expect(stop.mock.calls.length).toBeGreaterThanOrEqual(3)
-    const disposeHistory = effects[2]!() as () => void
+    const disposeTextSubmit = effects[2]!() as () => void
+    disposeTextSubmit()
+    const disposeHistory = effects[3]!() as () => void
     disposeHistory()
   })
 
@@ -562,8 +569,13 @@ describe('Voice UI assembly', () => {
     source.byId[VOICE_SESSION] = { ...source.byId[VOICE_SESSION]!, cwd: '/ungrouped' }
     const sessionSnapshot = source
     const start = vi.spyOn(VoiceController.prototype, 'start').mockResolvedValue(undefined)
+    const input = {
+      state: { getSnapshot: () => ({ draft: '', imageIds: [] }) },
+      setDraft: vi.fn(), submit: vi.fn(), notify: vi.fn(),
+    }
     const ctx = {
-      sessions: { open, list: { getSnapshot: () => sessionSnapshot } },
+      sessions: { open, scope: () => ({}), list: { getSnapshot: () => sessionSnapshot } },
+      conversation: { input: { for: () => input } },
       workspaces: {
         list: { getSnapshot: () => ({ ...workspaceState(), items: [] }) },
         connectWorkspace,

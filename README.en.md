@@ -42,6 +42,8 @@ SILICONFLOW_API_KEY=your-key
 
 `.env` is ignored by Git. The default boundary is `1500ms` of continuous silence, with at least `250ms` of voiced audio required to confirm speech onset; tune `silenceDurationMs`, `speechThreshold`, `minSpeechDurationMs`, and `maxUtteranceMs` in `packages/voice-app/cordis.patch.yml`. No local ASR/VAD models, Python, pip, PyTorch, or ONNX runtime are required. Replies continue to use Edge TTS with `zh-CN-XiaoxiaoNeural`.
 
+While Voice is connected, plain text submitted from that session's composer is treated as a Voice input: the same user message appears in the conversation, and the response continues through conversational rewriting and Edge TTS. Offline Voice sessions and submissions containing images retain the native Harness text path.
+
 ## Limitations
 
 - The browser microphone and playback surface targets the dsh Web UI: it is emitted by the copied dsh client tsdown preset and loads through the dsh web runtime's `window.__ModuleLoader__` contract, so it is not a framework-agnostic browser plugin.

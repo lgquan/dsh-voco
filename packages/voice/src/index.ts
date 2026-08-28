@@ -3,12 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { VoiceSessionId } from './types.ts'
+import { VoiceCommandCallId, VoiceSessionId, VoiceUtteranceId } from './types.ts'
 import type {
   TaskCommandCall,
   TaskCommandResult,
   TaskObservation,
-  VoiceCommandCallId,
   VoiceConversationMemory,
   VoiceEvent,
   VoiceProvider,
@@ -265,6 +264,21 @@ export class VoiceRuntime extends Service {
   /** Submit one validated command from a non-provider frontend control. */
   submitTaskCommand(id: VoiceSessionId, call: TaskCommandCall): void {
     this.acceptTaskCommand(this.requireAttachedSession(id), call)
+  }
+
+  /** Route browser-typed text through the same transcript and task path as recognized speech. */
+  submitText(id: VoiceSessionId, text: string): void {
+    const value = text.trim()
+    if (value === '') throw new Error('voice text submission requires non-empty text')
+    const live = this.requireAttachedSession(id)
+    const utteranceId = VoiceUtteranceId(`typed:${randomUUID()}`)
+    live.provider.interruptResponse()
+    this.publish(live, { type: 'transcription.started', utteranceId })
+    this.publish(live, { type: 'transcription.completed', utteranceId, text: value })
+    this.acceptTaskCommand(live, {
+      id: VoiceCommandCallId(`typed:${randomUUID()}`),
+      command: { type: 'route_transcription', input: value },
+    })
   }
 
   /**

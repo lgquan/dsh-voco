@@ -198,6 +198,32 @@ describe('voice WebSocket carrier', () => {
     await vi.waitFor(() => { expect(connection.spies.close).toHaveBeenCalledOnce() })
   })
 
+  it('routes browser-typed text through the active voice session', async () => {
+    const loaded = await loadCarrier()
+    const { socket } = await openVoice(loaded.url)
+    const received: Record<string, unknown>[] = []
+    const collect = (): void => {
+      socket.once('message', (data) => {
+        received.push(JSON.parse(Buffer.from(data as ArrayBuffer).toString('utf8')) as Record<string, unknown>)
+        if (received.length < 3) collect()
+      })
+    }
+    collect()
+
+    socket.send(JSON.stringify({ type: 'text.submit', text: '键入消息' }))
+
+    await vi.waitFor(() => { expect(received).toHaveLength(3) })
+    expect(received.map(event => event.type)).toEqual([
+      'transcription.started', 'transcription.completed', 'task.command',
+    ])
+    expect(received[1]).toMatchObject({ text: '键入消息' })
+    expect(received[2]).toMatchObject({
+      call: { command: { type: 'route_transcription', input: '键入消息' } },
+    })
+    socket.send(JSON.stringify({ type: 'session.close' }))
+    await once(socket, 'close')
+  })
+
   it('rejects missing sessions and every malformed control representation', async () => {
     const loaded = await loadCarrier()
     const missing = new WebSocket(loaded.url.replace('?sessionId=voice-source', ''))

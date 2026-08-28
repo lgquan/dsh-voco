@@ -18,6 +18,7 @@ export interface VoiceClientSnapshot {
 interface VoiceTransport {
   close(): Promise<void>
   cancelTask(taskId: string): void
+  submitText(text: string): void
 }
 
 interface VoiceTransportHandlers {
@@ -49,6 +50,7 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
   private openingAbort: AbortController | undefined
   private generation = 0
   private frame: number | undefined
+  private readonly pendingText: string[] = []
 
   /** Return the identity-stable snapshot until a voice fact changes. */
   getSnapshot = (): VoiceClientSnapshot => this.snapshot
@@ -65,6 +67,7 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
    */
   async start(sessionId: SessionId): Promise<void> {
     const generation = ++this.generation
+    this.pendingText.splice(0)
     // Construct and unlock both contexts before the first await so browser
     // autoplay policy still treats the microphone button as the user gesture.
     const contexts = createAudioContexts()
@@ -92,6 +95,7 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
       }
       this.openingTransport = undefined
       this.transport = transport
+      for (const text of this.pendingText.splice(0)) transport.submitText(text)
       this.setState('listening')
     } catch (cause) {
       if (generation !== this.generation) return
@@ -117,12 +121,24 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
     this.transport.cancelTask(taskId)
   }
 
+  /** Submit composer text as a voice turn, queueing it while the transport connects. */
+  submitText(text: string): void {
+    const value = text.trim()
+    if (value === '') throw new Error('voice text submission requires non-empty text')
+    if (this.snapshot.state === 'off' || this.snapshot.state === 'error' || this.snapshot.sessionId === undefined) {
+      throw new Error('voice text submission requires an active connection')
+    }
+    if (this.transport === undefined) this.pendingText.push(value)
+    else this.transport.submitText(value)
+  }
+
   /** Stop capture/playback and await owned browser-resource teardown. */
   async stop(): Promise<void> {
     ++this.generation
     this.openingAbort?.abort()
     this.openingAbort = undefined
     this.publish(INITIAL_SNAPSHOT)
+    this.pendingText.splice(0)
     await this.closeTransport()
   }
 
@@ -278,6 +294,10 @@ async function openVoiceTransport(
     cancelTask: (taskId) => {
       if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
       socket.send(JSON.stringify({ type: 'task.cancel', taskId }))
+    },
+    submitText: (text) => {
+      if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
+      socket.send(JSON.stringify({ type: 'text.submit', text }))
     },
     close: async () => {
       /* v8 ignore next -- controller ownership closes a transport once; the guard protects browser close races. */

@@ -12,6 +12,7 @@ import {
 import { VoiceOverlay, type VoiceOverlayInjected } from './VoiceOverlay.tsx'
 import { VoiceController } from './voice-controller.ts'
 import { VoiceHistoryStore } from './voice-history.ts'
+import { VoiceTextSubmitBridge, type VoiceTextInput } from './voice-text-submit.ts'
 import { voiceDelegationDefinition, voiceUtteranceDefinition } from './voice-definitions.ts'
 import { en, NS, type VoiceKey, zh } from './locales.ts'
 
@@ -24,15 +25,21 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-export const inject = ['conversationEvents', 'slots', 'sessions', 'locale']
+export const inject = ['conversation', 'conversationEvents', 'slots', 'sessions', 'locale']
 
 /** Mount root transport controls and durable Voice conversation renderers. @param ctx - browser context. */
 export function apply(ctx: ClientContext): void {
   const controller = new VoiceController()
   const history = new VoiceHistoryStore()
+  const textSubmit = new VoiceTextSubmitBridge(controller, (sessionId) => {
+    const scope = ctx.sessions.scope(sessionId)
+    if (scope === undefined) throw new Error(`voice input session "${sessionId}" is unavailable`)
+    return ctx.conversation.input.for(scope) as VoiceTextInput
+  })
   const stopVoice = (): Promise<void> => controller.stop()
   const startVoice = async (sourceSessionId: SessionId): Promise<void> => {
     ctx.sessions.open(sourceSessionId)
+    textSubmit.install(sourceSessionId)
     await controller.start(sourceSessionId)
     history.record(sourceSessionId)
   }
@@ -67,6 +74,7 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-voice: dictionaries')
   ctx.effect(() => async () => { await controller.stop() }, 'ui-voice: transport teardown')
+  ctx.effect(() => () => { textSubmit.dispose() }, 'ui-voice: text submit bridge teardown')
   ctx.effect(() => () => { history.dispose() }, 'ui-voice: history persistence teardown')
   ctx.conversationEvents.register(voiceUtteranceDefinition)
   ctx.conversationEvents.register(voiceDelegationDefinition)
