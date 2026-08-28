@@ -14,7 +14,7 @@
         interactionMode: frontend-agent
         inputSampleRate: 16000
         outputSampleRate: 48000
-        silenceDurationMs: 3000
+        silenceDurationMs: 1500
         speechThreshold: 0.015
         minSpeechDurationMs: 250
         maxUtteranceMs: 60000
