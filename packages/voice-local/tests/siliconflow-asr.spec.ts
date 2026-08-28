@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { NodeSpeechBackend, SiliconFlowAsr, pcm16MonoWav } from '../src/index.ts'
 import type { SpeechBackendEvent } from '../src/speech-backend.ts'
 
+const edgeTtsMocks = vi.hoisted(() => ({
+  synthesize: vi.fn(async () => new Uint8Array([1, 2, 3])),
+}))
+
+vi.mock('../src/edge-tts.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/edge-tts.ts')>(),
+  synthesizeEdgeSpeech: edgeTtsMocks.synthesize,
+}))
+
 describe('SiliconFlow cloud ASR', () => {
   it('encodes PCM16 mono audio as a valid WAV file', () => {
     const pcm = new Uint8Array([1, 2, 3, 4])
@@ -49,6 +58,7 @@ describe('SiliconFlow cloud ASR', () => {
     const backend = new NodeSpeechBackend({
       apiKey: 'test-key', endpoint: 'https://example.test/asr', model: 'test-model',
       requestTimeoutMs: 1_000, inputSampleRate: 16_000, outputSampleRate: 48_000,
+      ttsRate: '+20%',
       silenceDurationMs: 400, speechThreshold: 0.01, preRollMs: 200,
       trailingSilenceMs: 100, maxUtteranceMs: 5_000, minSpeechDurationMs: 200, fetch,
     })
@@ -74,6 +84,7 @@ describe('SiliconFlow cloud ASR', () => {
     const backend = new NodeSpeechBackend({
       apiKey: 'test-key', endpoint: 'https://example.test/asr', model: 'test-model',
       requestTimeoutMs: 1_000, inputSampleRate: 16_000, outputSampleRate: 48_000,
+      ttsRate: '+20%',
       silenceDurationMs: 400, speechThreshold: 0.01, preRollMs: 200,
       trailingSilenceMs: 100, maxUtteranceMs: 5_000, fetch,
     })
@@ -88,6 +99,29 @@ describe('SiliconFlow cloud ASR', () => {
 
     expect(fetch).not.toHaveBeenCalled()
     expect(events.filter(event => event.type.startsWith('transcription.'))).toEqual([])
+  })
+
+  it('passes the configured relative speech rate to Edge TTS', async () => {
+    const backend = new NodeSpeechBackend({
+      apiKey: 'test-key', endpoint: 'https://example.test/asr', model: 'test-model',
+      requestTimeoutMs: 1_000, inputSampleRate: 16_000, outputSampleRate: 48_000,
+      ttsRate: '+20%', silenceDurationMs: 400, speechThreshold: 0.01, preRollMs: 200,
+      trailingSilenceMs: 100, maxUtteranceMs: 5_000,
+    })
+    const events: SpeechBackendEvent[] = []
+    await backend.start(event => events.push(event))
+    backend.synthesize('response-rate', '语速测试。')
+    backend.finishSynthesis('response-rate')
+
+    await vi.waitFor(() => {
+      expect(edgeTtsMocks.synthesize).toHaveBeenCalledWith('语速测试。', '+20%')
+      expect(events).toEqual(expect.arrayContaining([
+        { type: 'tts.started', responseId: 'response-rate' },
+        { type: 'tts.delta', responseId: 'response-rate', audio: new Uint8Array([1, 2, 3]) },
+        { type: 'tts.done', responseId: 'response-rate' },
+      ]))
+    })
+    await backend.close()
   })
 })
 

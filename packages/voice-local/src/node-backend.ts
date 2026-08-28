@@ -13,6 +13,7 @@ export interface NodeSpeechConfig {
   readonly requestTimeoutMs: number
   readonly inputSampleRate: number
   readonly outputSampleRate: number
+  readonly ttsRate: string
   readonly silenceDurationMs: number
   readonly speechThreshold: number
   /** Minimum accumulated voiced audio before a candidate becomes an utterance. */
@@ -51,6 +52,7 @@ export class NodeSpeechBackend implements SpeechBackend {
     if (config.apiKey.trim() === '') throw new Error('SILICONFLOW_API_KEY is required for cloud speech recognition')
     if (config.speechThreshold <= 0 || config.speechThreshold >= 1) throw new Error('speechThreshold must be between 0 and 1')
     if ((config.minSpeechDurationMs ?? 250) <= 0) throw new Error('minSpeechDurationMs must be greater than 0')
+    if (!/^[+-]\d{1,3}%$/.test(config.ttsRate)) throw new Error('ttsRate must use an Edge TTS relative percentage such as +20%')
     this.audio = { inputSampleRate: config.inputSampleRate, outputSampleRate: config.outputSampleRate, format: 'audio_mpeg' }
     this.asr = new SiliconFlowAsr({
       apiKey: config.apiKey,
@@ -116,7 +118,7 @@ export class NodeSpeechBackend implements SpeechBackend {
       try {
         for (const sentence of splitSpeechText(text)) {
           if (generation !== this.synthesisGeneration || this.closed) return
-          const audio = await synthesizeEdgeSpeech(sentence)
+          const audio = await synthesizeEdgeSpeech(sentence, this.config.ttsRate)
           if (generation !== this.synthesisGeneration || this.closed) return
           this.emit?.({ type: 'tts.delta', responseId, audio })
         }

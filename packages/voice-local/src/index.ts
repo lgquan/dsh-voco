@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { VoiceProvider } from '@lgquan/dsh-voice'
+import { DEFAULT_EDGE_TTS_RATE } from './edge-tts.ts'
 import { LocalSession } from './session.ts'
 import { NodeSpeechBackend } from './node-backend.ts'
 
@@ -20,6 +21,7 @@ export interface Config {
   readonly requestTimeoutMs?: number
   readonly inputSampleRate?: number
   readonly outputSampleRate?: number
+  readonly ttsRate?: string
   readonly silenceDurationMs?: number
   readonly speechThreshold?: number
   readonly minSpeechDurationMs?: number
@@ -36,6 +38,7 @@ export const Config: z<Config> = z.object({
   requestTimeoutMs: z.natural().min(1).default(60_000),
   inputSampleRate: z.natural().min(1).default(16_000),
   outputSampleRate: z.natural().min(1).default(48_000),
+  ttsRate: z.string().default(DEFAULT_EDGE_TTS_RATE),
   silenceDurationMs: z.natural().min(100).default(1_500),
   speechThreshold: z.number().min(0.001).max(0.5).default(0.015),
   minSpeechDurationMs: z.natural().min(20).default(250),
@@ -60,6 +63,7 @@ export function apply(ctx: Context, config: Config = {}): () => void {
         requestTimeoutMs: config.requestTimeoutMs ?? 60_000,
         inputSampleRate: config.inputSampleRate ?? 16_000,
         outputSampleRate: config.outputSampleRate ?? 48_000,
+        ttsRate: config.ttsRate ?? DEFAULT_EDGE_TTS_RATE,
         silenceDurationMs: config.silenceDurationMs ?? 1_500,
         speechThreshold: config.speechThreshold ?? 0.015,
         minSpeechDurationMs: config.minSpeechDurationMs ?? 250,

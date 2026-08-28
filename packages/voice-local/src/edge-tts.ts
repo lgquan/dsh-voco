@@ -4,9 +4,10 @@ import { join } from 'node:path'
 import { EdgeTTS } from 'node-edge-tts'
 
 export const EDGE_TTS_VOICE = 'zh-CN-XiaoxiaoNeural'
+export const DEFAULT_EDGE_TTS_RATE = '+20%'
 
 /** Edge TTS adapter. Returns the service's MP3 bytes for browser decoding. */
-export async function synthesizeEdgeSpeech(text: string, rate = '+0%'): Promise<Uint8Array> {
+export async function synthesizeEdgeSpeech(text: string, rate = DEFAULT_EDGE_TTS_RATE): Promise<Uint8Array> {
   const normalized = normalizeSpeechText(text)
   if (normalized === '') return new Uint8Array()
   const directory = await mkdtemp(join(tmpdir(), 'dsh-voco-edge-'))
