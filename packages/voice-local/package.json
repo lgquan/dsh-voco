@@ -1,6 +1,6 @@
 {
   "name": "@lgquan/dsh-voice-local",
-  "description": "Cross-platform local ONNX VAD and ASR with Edge TTS for dsh-voice",
+  "description": "Silence-gated SiliconFlow cloud ASR with Edge TTS for dsh-voice",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
@@ -31,8 +31,7 @@
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
-    "node-edge-tts": "1.2.10",
-    "sherpa-onnx-node": "1.13.6"
+    "node-edge-tts": "1.2.10"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

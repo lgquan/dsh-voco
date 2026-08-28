@@ -8,8 +8,8 @@
 
 ## 交互
 
-- **实时语音对话**：浏览器采集音频，经本地 Silero VAD、流式 Paraformer ONNX 识别，回复使用 Edge TTS 的 Xiaoxiao 中文音色，支持边说边听和打断。
-- **按需派活**：本地 ASR 后先由轻量前台模型判断意图；寒暄和无需工具的问题直接回答，只有读取或修改项目、运行命令等工作才通过 `realtime_delegation` 进入固定后台 Agent。
+- **云端语音识别**：浏览器采集音频，本地只做轻量音量检测；连续静音 3 秒后把当前语句封装为 WAV，交给硅基流动 `XingChenAGI/XingChenASR-V3.2-Ultra` 转写。回复使用 Edge TTS 的 Xiaoxiao 中文音色，支持边说边听和打断。
+- **按需派活**：云端 ASR 返回文字后，由轻量前台模型判断意图；寒暄和无需工具的问题直接回答，只有读取或修改项目、运行命令等工作才通过 `realtime_delegation` 进入固定后台 Agent。
 - **连续任务上下文**：同一语音会话的多次委派复用一个后台 Agent Session，每次任务仍有独立 delegation id。
 - **独立口语化结果**：后台 Agent 用 `progress | result | warning | error | question` 事件和唯一的 `detail` 字段提交完整事实；语音层结合用户原话调用独立模型重写，并把整段回复作为一条页面消息和一次 TTS 响应。Edge TTS 内部仍按句合成，但不会拆成多个气泡。
 - **可恢复的双会话记忆**：停止再启动语音或重启 DSH 后，会恢复来源 Session 的最近对话及其固定后台 Agent Session 绑定；中断任务会告知上次进度，但不会自动重放。
@@ -32,11 +32,15 @@ dsh plugin --profile web add "$repo\packages\voice-app" "$repo\packages\voice" "
 dsh web
 ```
 
-## 本地语音环境
+## 语音环境
 
-`pnpm install` 会自动运行跨平台模型安装器，把 Silero VAD 和中文/英文流式 Paraformer 权重下载到 `speech/models`。语音回复使用 Edge TTS 网络服务和 `zh-CN-XiaoxiaoNeural` 音色；`dsh web` 启动时只加载本地 ASR/VAD 模型。安装器可重复执行：`pnpm run setup:voice-local`。
+在项目根目录创建 `.env`，配置硅基流动 API Key：
 
-语音运行时完全使用 TypeScript/Node 与预编译 ONNX 原生包，不要求 Python、pip、虚拟环境或 PyTorch。支持 Windows x64，以及 macOS Intel 和 Apple Silicon。
+```dotenv
+SILICONFLOW_API_KEY=你的密钥
+```
+
+`.env` 已被 Git 忽略。默认连续静音 `3000ms` 后上传一句话；可在 `packages/voice-app/cordis.patch.yml` 中调整 `silenceDurationMs`、`speechThreshold` 和 `maxUtteranceMs`。本地不再下载或加载 ASR/VAD 模型，也不要求 Python、pip、PyTorch 或 ONNX；语音回复继续使用 Edge TTS 和 `zh-CN-XiaoxiaoNeural` 音色。
 
 ## 限制
 

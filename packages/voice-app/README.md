@@ -2,6 +2,8 @@
 
 English | [中文](README.zh.md)
 
+Browser PCM uses lightweight local silence detection and is uploaded as WAV to SiliconFlow after three seconds of silence.
+
 The `dsh-voco` patch-layer bundle attaches provider transport directly to the current source Session and restores recent conversation from durable `voice/utterance-end` events. A lightweight frontend model answers ordinary conversation directly and delegates only tool-requiring work. Delegations from one source Session continuously reuse one ordinary task Agent Session. `voice/agent-binding-state` persists the Voice conversation, background Agent, workspace, last task, last-used time, and status; restart recovery prefers that complete record while remaining compatible with `voice/task-session-bound`. Full results and progress remain in the task UI, while an independent model rewrites the final result and user-actionable questions or warnings against the original request. Progress updates stay in the folded task trace and do not create extra Voice-window messages or TTS requests. The background Agent cannot directly specify spoken text. Root-owned audio continues across navigation, and the browser history index exposes saved Voice Sessions in the sidebar.
 
 ## Model Experience

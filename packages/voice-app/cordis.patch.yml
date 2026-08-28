@@ -12,10 +12,11 @@
       name: '@lgquan/dsh-voice-local'
       config:
         interactionMode: frontend-agent
-        startupTimeoutMs: 120000
         inputSampleRate: 16000
         outputSampleRate: 48000
-        threads: 4
+        silenceDurationMs: 3000
+        speechThreshold: 0.015
+        maxUtteranceMs: 60000
 
     - id: voice-assistant
       name: '@lgquan/dsh-voice-assistant'

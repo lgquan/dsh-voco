@@ -4,5 +4,6 @@ lib/
 dist/
 .cache/
 speech/models/
+.env
 
 .npmrc

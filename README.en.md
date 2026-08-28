@@ -8,8 +8,8 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 
 ## Interaction
 
-- **Real-time voice conversation**: browser audio uses local Silero VAD and streaming Paraformer ONNX, while replies use Edge TTS's Chinese Xiaoxiao voice with interruption support.
-- **On-demand delegation**: after local ASR, a lightweight frontend model routes the intent. Greetings and questions requiring no tools are answered directly; only workspace inspection or modification, commands, and similar work enter the fixed background Agent through `realtime_delegation`.
+- **Cloud speech recognition**: browser audio uses only lightweight local level detection. After three seconds of silence, the utterance is wrapped as WAV and transcribed by SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra`. Replies use Edge TTS's Chinese Xiaoxiao voice with interruption support.
+- **On-demand delegation**: after cloud ASR returns text, a lightweight frontend model routes the intent. Greetings and questions requiring no tools are answered directly; only workspace inspection or modification, commands, and similar work enter the fixed background Agent through `realtime_delegation`.
 - **Continuous task context**: sequential delegations reuse one background Agent Session while retaining distinct delegation ids.
 - **Independent conversational results**: the background Agent reports `progress | result | warning | error | question` events with complete facts in the sole `detail` field. The Voice layer rewrites detail against the original request and submits the coherent reply as one UI message and one TTS response. Edge TTS may synthesize sentences internally without creating separate chat bubbles.
 - **Recoverable two-session memory**: restarting voice or DSH restores recent source-Session conversation and its fixed background Agent Session binding. An interrupted task reports its last spoken progress but is never replayed automatically.
@@ -32,11 +32,15 @@ The `dsh` command comes from `npm install -g @deepseek-ai/dsh`. Launch web (the 
 dsh web
 ```
 
-## Local speech environment
+## Speech environment
 
-`pnpm install` automatically runs the cross-platform model installer. Silero VAD and bilingual streaming Paraformer assets are stored under `speech/models`; replies use Edge TTS voice `zh-CN-XiaoxiaoNeural`. The installer is idempotent and can be rerun with `pnpm run setup:voice-local`.
+Create `.env` in the repository root and configure the SiliconFlow API key:
 
-The speech runtime uses TypeScript/Node and prebuilt ONNX native packages only. Python, pip, virtual environments, and PyTorch are not required. Windows x64, macOS Intel, and macOS Apple Silicon are supported.
+```dotenv
+SILICONFLOW_API_KEY=your-key
+```
+
+`.env` is ignored by Git. The default boundary is `3000ms` of continuous silence; tune `silenceDurationMs`, `speechThreshold`, and `maxUtteranceMs` in `packages/voice-app/cordis.patch.yml`. No local ASR/VAD models, Python, pip, PyTorch, or ONNX runtime are required. Replies continue to use Edge TTS with `zh-CN-XiaoxiaoNeural`.
 
 ## Limitations
 

@@ -1,30 +1,42 @@
 import { randomUUID } from 'node:crypto'
-import { createRequire } from 'node:module'
 import type { VoiceAudioProfile } from '@lgquan/dsh-voice'
-import { assertModelsInstalled, createModelLayout, type LocalModelLayout } from './model-layout.ts'
 import { splitSpeechText, synthesizeEdgeSpeech } from './edge-tts.ts'
+import { SiliconFlowAsr } from './siliconflow-asr.ts'
 import type { SpeechBackend, SpeechBackendEvent } from './speech-backend.ts'
 
 const INPUT_SAMPLE_RATE = 16_000
-const VAD_WINDOW_SIZE = 512
-const ASR_CHUNK_SAMPLES = 9_600
 
 export interface NodeSpeechConfig {
-  readonly modelRoot: string
-  readonly startupTimeoutMs: number
+  readonly apiKey: string
+  readonly endpoint: string
+  readonly model: string
+  readonly requestTimeoutMs: number
   readonly inputSampleRate: number
   readonly outputSampleRate: number
-  readonly threads: number
+  readonly silenceDurationMs: number
+  readonly speechThreshold: number
+  readonly preRollMs: number
+  readonly trailingSilenceMs: number
+  readonly maxUtteranceMs: number
+  readonly fetch?: typeof fetch
 }
 
-/** In-process Node/ONNX adapter; model details remain behind SpeechBackend. */
+interface ActiveUtterance {
+  readonly id: string
+  readonly frames: Uint8Array[]
+  totalBytes: number
+  voicedBytes: number
+  silenceBytes: number
+}
+
+/** Lightweight PCM silence detector plus SiliconFlow cloud ASR and Edge TTS. */
 export class NodeSpeechBackend implements SpeechBackend {
   readonly audio: VoiceAudioProfile
+  private readonly asr: SiliconFlowAsr
   private emit: ((event: SpeechBackendEvent) => void) | undefined
-  private vad: import('sherpa-onnx-node').Vad | undefined
-  private recognizer: import('sherpa-onnx-node').OnlineRecognizer | undefined
-  private buffered = new Float32Array()
-  private activeUtteranceId: string | undefined
+  private readonly preRoll: Uint8Array[] = []
+  private preRollBytes = 0
+  private active: ActiveUtterance | undefined
   private recognitionQueue: Promise<void> = Promise.resolve()
   private synthesisQueue: Promise<void> = Promise.resolve()
   private synthesisGeneration = 0
@@ -32,18 +44,24 @@ export class NodeSpeechBackend implements SpeechBackend {
   private closed = false
 
   constructor(private readonly config: NodeSpeechConfig) {
-    if (config.inputSampleRate !== INPUT_SAMPLE_RATE) throw new Error('local ONNX speech requires 16000 Hz microphone audio')
+    if (config.inputSampleRate !== INPUT_SAMPLE_RATE) throw new Error('SiliconFlow speech input requires 16000 Hz microphone audio')
+    if (config.apiKey.trim() === '') throw new Error('SILICONFLOW_API_KEY is required for cloud speech recognition')
+    if (config.speechThreshold <= 0 || config.speechThreshold >= 1) throw new Error('speechThreshold must be between 0 and 1')
     this.audio = { inputSampleRate: config.inputSampleRate, outputSampleRate: config.outputSampleRate, format: 'audio_mpeg' }
+    this.asr = new SiliconFlowAsr({
+      apiKey: config.apiKey,
+      endpoint: config.endpoint,
+      model: config.model,
+      timeoutMs: config.requestTimeoutMs,
+      ...(config.fetch === undefined ? {} : { fetch: config.fetch }),
+    })
   }
 
-  async start(emit: (event: SpeechBackendEvent) => void): Promise<void> {
-    if (this.emit !== undefined) throw new Error('local speech backend is already started')
+  start(emit: (event: SpeechBackendEvent) => void): Promise<void> {
+    if (this.emit !== undefined) return Promise.reject(new Error('speech backend is already started'))
     this.emit = emit
-    const layout = createModelLayout(this.config.modelRoot)
-    await assertModelsInstalled(layout)
-    const loading = this.loadModels(layout)
-    await withTimeout(loading, this.config.startupTimeoutMs, 'local ONNX speech models did not load in time')
     emit({ type: 'ready' })
+    return Promise.resolve()
   }
 
   appendAudio(audio: Uint8Array): void {
@@ -52,33 +70,29 @@ export class NodeSpeechBackend implements SpeechBackend {
       this.emit?.({ type: 'error', message: 'microphone PCM16 frame has an odd byte length' })
       return
     }
-    const incoming = pcm16ToFloat(audio)
-    const combined = new Float32Array(this.buffered.length + incoming.length)
-    combined.set(this.buffered)
-    combined.set(incoming, this.buffered.length)
-    let offset = 0
-    while (combined.length - offset >= VAD_WINDOW_SIZE) {
-      this.processVadWindow(combined.slice(offset, offset + VAD_WINDOW_SIZE))
-      offset += VAD_WINDOW_SIZE
+    const frame = audio.slice()
+    const voiced = pcm16Rms(frame) >= this.config.speechThreshold
+    if (this.active === undefined) {
+      this.rememberPreRoll(frame)
+      if (!voiced) return
+      this.beginUtterance()
+      return
     }
-    this.buffered = combined.slice(offset)
+    this.active.frames.push(frame)
+    this.active.totalBytes += frame.byteLength
+    if (voiced) {
+      this.active.voicedBytes += frame.byteLength
+      this.active.silenceBytes = 0
+    } else {
+      this.active.silenceBytes += frame.byteLength
+    }
+    if (this.active.silenceBytes >= this.bytesFor(this.config.silenceDurationMs)
+      || this.active.totalBytes >= this.bytesFor(this.config.maxUtteranceMs)) this.finishUtterance()
   }
 
-  commitAudio(): void {
-    if (this.closed || this.vad === undefined) return
-    if (this.buffered.length > 0) {
-      const padded = new Float32Array(VAD_WINDOW_SIZE)
-      padded.set(this.buffered)
-      this.buffered = new Float32Array()
-      this.processVadWindow(padded)
-    }
-    this.vad.flush()
-    this.consumeSegments()
-  }
+  commitAudio(): void { this.finishUtterance() }
 
   synthesize(responseId: string, text: string): void {
-    // Each fragment is queued in order. `interrupt()` advances the generation
-    // and invalidates every fragment that has not started yet.
     const generation = this.synthesisGeneration
     const response = this.synthesisResponses.get(responseId) ?? { finished: false, started: false }
     this.synthesisResponses.set(responseId, response)
@@ -93,8 +107,6 @@ export class NodeSpeechBackend implements SpeechBackend {
           if (generation !== this.synthesisGeneration || this.closed) return
           const audio = await synthesizeEdgeSpeech(sentence)
           if (generation !== this.synthesisGeneration || this.closed) return
-          // Each delta must remain a complete MP3 file. The browser decoder cannot
-          // decode arbitrary slices from the middle of an encoded stream.
           this.emit?.({ type: 'tts.delta', responseId, audio })
         }
         if (generation !== this.synthesisGeneration || this.closed) return
@@ -112,8 +124,7 @@ export class NodeSpeechBackend implements SpeechBackend {
 
   finishSynthesis(responseId: string): void {
     const response = this.synthesisResponses.get(responseId)
-    if (response === undefined) return
-    response.finished = true
+    if (response !== undefined) response.finished = true
   }
 
   interrupt(): void {
@@ -126,94 +137,92 @@ export class NodeSpeechBackend implements SpeechBackend {
     this.closed = true
     this.synthesisGeneration += 1
     this.synthesisResponses.clear()
-    this.vad?.clear()
+    this.active = undefined
+    this.preRoll.splice(0)
     await Promise.allSettled([this.recognitionQueue, this.synthesisQueue])
-    this.emit?.({ type: 'closed', reason: 'local ONNX backend closed' })
+    this.emit?.({ type: 'closed', reason: 'SiliconFlow speech backend closed' })
     this.emit = undefined
   }
 
-  private async loadModels(layout: LocalModelLayout): Promise<void> {
-    const threads = Math.max(1, this.config.threads)
-    const nativeModule = ['sherpa', 'onnx', 'node'].join('-')
-    const sherpa = createRequire(import.meta.url)(nativeModule) as typeof import('sherpa-onnx-node').default
-    this.vad = new sherpa.Vad({
-      sileroVad: { model: layout.vad, threshold: 0.5, minSpeechDuration: 0.25, minSilenceDuration: 0.6, windowSize: VAD_WINDOW_SIZE },
-      sampleRate: INPUT_SAMPLE_RATE, debug: false, numThreads: Math.min(threads, 2),
-    }, 120)
-    this.recognizer = new sherpa.OnlineRecognizer({
-      featConfig: { sampleRate: INPUT_SAMPLE_RATE, featureDim: 80 },
-      modelConfig: {
-        paraformer: { encoder: layout.asrEncoder, decoder: layout.asrDecoder },
-        tokens: layout.asrTokens, numThreads: threads, provider: 'cpu', debug: 0,
-      },
+  private beginUtterance(): void {
+    const frames = this.preRoll.splice(0)
+    const totalBytes = this.preRollBytes
+    this.preRollBytes = 0
+    const last = frames.at(-1)
+    this.active = {
+      id: randomUUID(),
+      frames,
+      totalBytes,
+      voicedBytes: last?.byteLength ?? 0,
+      silenceBytes: 0,
+    }
+    this.interrupt()
+    this.emit?.({ type: 'transcription.started', utteranceId: this.active.id })
+  }
+
+  private finishUtterance(): void {
+    const utterance = this.active
+    if (utterance === undefined) return
+    this.active = undefined
+    const keepSilence = this.bytesFor(this.config.trailingSilenceMs)
+    const trimBytes = Math.max(0, utterance.silenceBytes - keepSilence)
+    const pcm = concatFrames(utterance.frames, Math.max(0, utterance.totalBytes - trimBytes))
+    if (utterance.voicedBytes === 0 || pcm.byteLength === 0) {
+      this.emit?.({ type: 'transcription.failed', utteranceId: utterance.id, message: '没有检测到可识别的语音。' })
+      return
+    }
+    this.recognitionQueue = this.recognitionQueue.catch(() => {}).then(async () => {
+      if (this.closed) return
+      try {
+        const text = await this.asr.transcribe(pcm, this.config.inputSampleRate)
+        if (this.closed) return
+        if (text === '') {
+          this.emit?.({ type: 'transcription.failed', utteranceId: utterance.id, message: '云端语音识别没有返回文字。' })
+        } else {
+          this.emit?.({ type: 'transcription.completed', utteranceId: utterance.id, text })
+        }
+      } catch (error: unknown) {
+        if (!this.closed) this.emit?.({ type: 'transcription.failed', utteranceId: utterance.id, message: errorMessage(error) })
+      }
     })
   }
 
-  private processVadWindow(window: Float32Array): void {
-    const vad = this.vad
-    if (vad === undefined) return
-    vad.acceptWaveform(window)
-    if (vad.isDetected() && this.activeUtteranceId === undefined) {
-      // Barge-in is a speech event, not a task cancellation. Stop only the
-      // current local synthesis; the Harness task continues untouched.
-      this.synthesisGeneration += 1
-      this.activeUtteranceId = randomUUID()
-      this.emit?.({ type: 'transcription.started', utteranceId: this.activeUtteranceId })
-    }
-    this.consumeSegments()
-  }
-
-  private consumeSegments(): void {
-    const vad = this.vad
-    if (vad === undefined) return
-    while (!vad.isEmpty()) {
-      const segment = vad.front(false)
-      vad.pop()
-      const utteranceId = this.activeUtteranceId ?? randomUUID()
-      if (this.activeUtteranceId === undefined) this.emit?.({ type: 'transcription.started', utteranceId })
-      this.activeUtteranceId = undefined
-      const samples = Float32Array.from(segment.samples)
-      this.recognitionQueue = this.recognitionQueue.catch(() => {}).then(() => this.transcribe(utteranceId, samples))
+  private rememberPreRoll(frame: Uint8Array): void {
+    this.preRoll.push(frame)
+    this.preRollBytes += frame.byteLength
+    const limit = this.bytesFor(this.config.preRollMs)
+    while (this.preRollBytes > limit && this.preRoll.length > 1) {
+      const removed = this.preRoll.shift()
+      if (removed !== undefined) this.preRollBytes -= removed.byteLength
     }
   }
 
-  private async transcribe(utteranceId: string, samples: Float32Array): Promise<void> {
-    const recognizer = this.recognizer
-    if (recognizer === undefined || this.closed) return
-    try {
-      const stream = recognizer.createStream()
-      let previous = ''
-      for (let offset = 0; offset < samples.length; offset += ASR_CHUNK_SAMPLES) {
-        stream.acceptWaveform({ samples: samples.subarray(offset, Math.min(offset + ASR_CHUNK_SAMPLES, samples.length)), sampleRate: INPUT_SAMPLE_RATE })
-        while (recognizer.isReady(stream)) recognizer.decode(stream)
-        const text = recognizer.getResult(stream).text.trim()
-        if (text !== '' && text !== previous) {
-          previous = text
-          this.emit?.({ type: 'transcription.updated', utteranceId, text })
-        }
-        await Promise.resolve()
-      }
-      stream.acceptWaveform({ samples: new Float32Array(Math.round(INPUT_SAMPLE_RATE * 0.4)), sampleRate: INPUT_SAMPLE_RATE })
-      stream.inputFinished()
-      while (recognizer.isReady(stream)) recognizer.decode(stream)
-      const finalText = recognizer.getResult(stream).text.trim() || previous
-      this.emit?.({ type: 'transcription.completed', utteranceId, text: finalText })
-    } catch (error: unknown) {
-      this.emit?.({ type: 'transcription.failed', utteranceId, message: errorMessage(error) })
-    }
+  private bytesFor(milliseconds: number): number {
+    return Math.round(this.config.inputSampleRate * 2 * milliseconds / 1000)
   }
 }
 
-function pcm16ToFloat(bytes: Uint8Array): Float32Array {
+function pcm16Rms(bytes: Uint8Array): number {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  return Float32Array.from({ length: bytes.byteLength / 2 }, (_, index) => view.getInt16(index * 2, true) / 32768)
+  let squares = 0
+  const samples = bytes.byteLength / 2
+  for (let offset = 0; offset < bytes.byteLength; offset += 2) {
+    const value = view.getInt16(offset, true) / 32768
+    squares += value * value
+  }
+  return samples === 0 ? 0 : Math.sqrt(squares / samples)
+}
+
+function concatFrames(frames: readonly Uint8Array[], length: number): Uint8Array {
+  const output = new Uint8Array(length)
+  let offset = 0
+  for (const frame of frames) {
+    if (offset >= length) break
+    const part = frame.subarray(0, Math.min(frame.byteLength, length - offset))
+    output.set(part, offset)
+    offset += part.byteLength
+  }
+  return output
 }
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error) }
-
-async function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), milliseconds) })])
-  } finally { if (timer !== undefined) clearTimeout(timer) }
-}
