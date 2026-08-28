@@ -555,6 +555,7 @@ describe('Voice UI assembly', () => {
     expect(registrations.map(entry => [entry.options.name, entry.options.id ?? entry.options.key])).toEqual([
       ['conversation.input.right', 'voice'],
       ['shell.overlay', 'voice-active'],
+      ['shell.overlay', 'voice-session-markers'],
       ['sidebar.footer.action', 'voice-history'],
       ['conversation.chat.node', 'voice-utterance'],
       ['conversation.chat.node', 'voice-delegation'],
@@ -587,15 +588,15 @@ describe('Voice UI assembly', () => {
     })()
     overlay.openVoiceSession(TASK_SESSION)
     await overlay.stopVoice()
-    const history = (registrations[2]!.options.inject as () => {
+    const history = (registrations[3]!.options.inject as () => {
       hooks: { voiceHistory: { getSnapshot(): { entries: readonly { sessionId: SessionId }[] } } }
       openSession(id: SessionId): void
     })()
     history.openSession(VOICE_SESSION)
     expect(history.hooks.voiceHistory.getSnapshot().entries[0]?.sessionId).toBe(VOICE_SESSION)
-    const utterance = (registrations[3]!.options.inject as () => { hooks: { voice: unknown } })()
+    const utterance = (registrations[4]!.options.inject as () => { hooks: { voice: unknown } })()
     expect(utterance.hooks.voice).toBeInstanceOf(VoiceController)
-    const delegation = (registrations[4]!.options.inject as () => { openSession(id: SessionId): void })()
+    const delegation = (registrations[5]!.options.inject as () => { openSession(id: SessionId): void })()
     delegation.openSession(TASK_SESSION)
     expect(open).toHaveBeenLastCalledWith(TASK_SESSION)
 

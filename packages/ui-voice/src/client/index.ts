@@ -10,6 +10,7 @@ import {
   VoiceUtteranceView, type VoiceUtteranceInjected,
 } from './VoiceNodeViews.tsx'
 import { VoiceOverlay, type VoiceOverlayInjected } from './VoiceOverlay.tsx'
+import { VoiceSessionMarkers, type VoiceSessionMarkersInjected } from './VoiceSessionMarkers.tsx'
 import { VoiceController } from './voice-controller.ts'
 import { VoiceHistoryStore } from './voice-history.ts'
 import { VoiceTextSubmitBridge, type VoiceTextInput } from './voice-text-submit.ts'
@@ -78,6 +79,9 @@ export function apply(ctx: ClientContext): void {
     openVoiceSession: (id) => { ctx.sessions.open(id) },
     stopVoice,
   })
+  const voiceSessionMarkersInjected = (): VoiceSessionMarkersInjected => ({
+    hooks: { voiceHistory: history.snapshot },
+  })
   const utteranceInjected = (): VoiceUtteranceInjected => ({ hooks: { voice: controller } })
   const delegationInjected = (): VoiceDelegationInjected => ({
     hooks: { voice: controller },
@@ -112,6 +116,13 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: voiceOverlayInjected,
   }, VoiceOverlay))
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'voice-session-markers',
+    order: 10,
+    locale: NS,
+    inject: voiceSessionMarkersInjected,
+  }, VoiceSessionMarkers))
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
     id: 'voice-history',
