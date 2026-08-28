@@ -28,6 +28,11 @@ interface VoiceTransportHandlers {
   readonly onUnexpectedClose: () => void
 }
 
+export interface VoiceControllerOptions {
+  /** Called once after the first non-empty durable voice turn is completed. */
+  readonly onConversationStarted?: (sessionId: SessionId) => void
+}
+
 interface VoiceReadyEvent {
   readonly type: 'ready'
   readonly voiceSessionId: string
@@ -51,6 +56,12 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
   private generation = 0
   private frame: number | undefined
   private readonly pendingText: string[] = []
+  private readonly onConversationStarted: ((sessionId: SessionId) => void) | undefined
+  private conversationStarted = false
+
+  constructor(options: VoiceControllerOptions = {}) {
+    this.onConversationStarted = options.onConversationStarted
+  }
 
   /** Return the identity-stable snapshot until a voice fact changes. */
   getSnapshot = (): VoiceClientSnapshot => this.snapshot
@@ -68,6 +79,7 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
   async start(sessionId: SessionId): Promise<void> {
     const generation = ++this.generation
     this.pendingText.splice(0)
+    this.conversationStarted = false
     // Construct and unlock both contexts before the first await so browser
     // autoplay policy still treats the microphone button as the user gesture.
     const contexts = createAudioContexts()
@@ -204,7 +216,9 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
       return
     }
     if (type === 'transcription.completed') {
-      this.setText(stringOf(event.utteranceId), stringOf(event.text), 'immediate')
+      const text = stringOf(event.text)
+      this.setText(stringOf(event.utteranceId), text, 'immediate')
+      if (text.trim() !== '') this.markConversationStarted()
       return
     }
     if (type === 'output_text.started') {
@@ -218,6 +232,7 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
     if (type === 'output_text.done') {
       const text = stringOf(event.text)
       if (text !== '') this.setText(stringOf(event.utteranceId), text, 'immediate')
+      if (text.trim() !== '') this.markConversationStarted()
       return
     }
     if (type === 'output_audio.started') {
@@ -229,6 +244,14 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
       return
     }
     if (type === 'error') this.handleUnexpectedClose()
+  }
+
+  private markConversationStarted(): void {
+    if (this.conversationStarted) return
+    const sessionId = this.snapshot.sessionId
+    if (sessionId === undefined) return
+    this.conversationStarted = true
+    this.onConversationStarted?.(sessionId)
   }
 
   private publish(snapshot: VoiceClientSnapshot): void {

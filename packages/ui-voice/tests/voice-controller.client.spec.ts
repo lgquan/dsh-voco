@@ -213,6 +213,19 @@ describe('VoiceController', () => {
     expect(() => { controller.submitText('离线') }).toThrow('requires an active connection')
   })
 
+  it('notifies once when the first durable voice transcription completes', async () => {
+    const onConversationStarted = vi.fn()
+    const controller = new VoiceController({ onConversationStarted })
+    const socket = await start(controller)
+
+    socket.json({ type: 'transcription.completed', utteranceId: 'user-1', text: '你好' })
+    socket.json({ type: 'transcription.completed', utteranceId: 'user-2', text: '继续' })
+
+    expect(onConversationStarted).toHaveBeenCalledTimes(1)
+    expect(onConversationStarted).toHaveBeenCalledWith(SESSION)
+    await controller.stop()
+  })
+
   it('rejects malformed, unsupported, and provider-error ready payloads before microphone access', async () => {
     const invalid: Array<readonly [unknown, string]> = [
       [null, 'expected a ready event'],

@@ -27,9 +27,29 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export const inject = ['conversation', 'conversationEvents', 'slots', 'sessions', 'locale']
 
+/** Refresh the Host-backed Session list when the runtime exposes its baseline pull. */
+function refreshSessions(ctx: ClientContext): void {
+  // `refresh()` exists on the concrete SessionRuntime used by dsh Web, but is
+  // intentionally omitted from the narrow feature-facing ISessions contract.
+  // Keep this compatibility bridge optional for older runtimes and fixtures.
+  const service = ctx.sessions as unknown as { refresh?: () => Promise<void> }
+  if (typeof service.refresh !== 'function') return
+  void service.refresh.call(ctx.sessions).catch((cause: unknown) => {
+    console.warn('voice session list refresh failed:', cause)
+  })
+}
+
 /** Mount root transport controls and durable Voice conversation renderers. @param ctx - browser context. */
 export function apply(ctx: ClientContext): void {
-  const controller = new VoiceController()
+  const controller = new VoiceController({
+    onConversationStarted: () => {
+      // Voice events are appended by the Host, while the browser's session
+      // list keeps its own blank-bit cache. Refresh once after the first
+      // completed turn so Workspace new-session creation does not reuse the
+      // now-engaged Voice Session.
+      refreshSessions(ctx)
+    },
+  })
   const history = new VoiceHistoryStore()
   const textSubmit = new VoiceTextSubmitBridge(controller, (sessionId) => {
     const scope = ctx.sessions.scope(sessionId)
