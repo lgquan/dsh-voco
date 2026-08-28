@@ -34,6 +34,7 @@ The plugin uses `XingChenAGI/XingChenASR-V3.2-Ultra` for cloud speech recognitio
 
 - Keeps one background Agent Session bound to each Voice Session, including after DSH restarts.
 - Answers ordinary conversation directly and delegates only work that needs tools.
+- Speaks a short contextual acknowledgement before starting delegated Agent work.
 - Keeps full task reports in the task UI while speaking a concise, purpose-written result.
 - Supports interruption, browser navigation, reconnects, and restored conversation history.
 - Ships the server and browser surfaces as one public npm package.

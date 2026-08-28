@@ -162,8 +162,8 @@ describe('voice assistant driver', () => {
           yield {
             type: 'text-delta',
             index: 0,
-            text: prompt.includes('请创建免费.md')
-              ? '{"action":"delegate"}'
+          text: prompt.includes('请创建免费.md')
+              ? '{"action":"delegate","acknowledgement":"好的，我先检查相关文件。"}'
               : '{"action":"chat","reply":"你好，我在呢。"}',
           }
           yield { type: 'finish', reason: { kind: 'stop' } }
@@ -180,7 +180,8 @@ describe('voice assistant driver', () => {
       }
     }
     ctx.llm.registerAdapter(['test'], new RewriteAdapter())
-    const createdAgents = installAgentFactory(ctx)
+    const delegationOrder: string[] = []
+    const createdAgents = installAgentFactory(ctx, () => { delegationOrder.push('agent-created') })
     await ctx.plugin(AgentDefaultModel, { provider: 'test', model: 'test' })
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -200,6 +201,7 @@ describe('voice assistant driver', () => {
       appendSpeechText: (text) => { pendingSpeech += text },
       requestResponse: () => {
         if (pendingSpeech === '') return
+        if (pendingSpeech === '好的，我先检查相关文件。') delegationOrder.push('acknowledged')
         displayed.push(pendingSpeech)
         ttsInputs.push(pendingSpeech)
         pendingSpeech = ''
@@ -248,6 +250,8 @@ describe('voice assistant driver', () => {
       },
     })
     await settle()
+    expect(displayed).toEqual(['你好，我在呢。', '好的，我先检查相关文件。'])
+    expect(delegationOrder).toEqual(['acknowledged', 'agent-created'])
     const task = createdAgents[0]
     if (task === undefined) throw new Error('rewrite task was not created')
     const delegated = task.followup.mock.calls[0]?.[0]
@@ -280,7 +284,9 @@ describe('voice assistant driver', () => {
     expect(progress).toMatchObject({ isError: false, value: { delivery: 'queued' } })
     // Progress stays in the folded task trace and does not create another
     // spoken response or chat bubble.
-    await vi.waitFor(() => { expect(displayed).toEqual(['你好，我在呢。']) })
+    await vi.waitFor(() => {
+      expect(displayed).toEqual(['你好，我在呢。', '好的，我先检查相关文件。'])
+    })
 
     const complete = await ctx.tools.execute({
       signal: new AbortController().signal,
@@ -299,6 +305,7 @@ describe('voice assistant driver', () => {
     await vi.waitFor(() => {
       expect(displayed).toEqual([
         '你好，我在呢。',
+        '好的，我先检查相关文件。',
         '已经创建了名为免费的 Markdown 文档。文件内容也已经检查完成。',
       ])
     })
@@ -328,6 +335,12 @@ describe('voice assistant driver', () => {
     expect(prompt).toContain('这是最终结果。完整回答用户的问题')
     expect(request.system).toContain('用户感知上你就是同一个助手')
     expect(request.system).toContain('文件名、扩展名、路径和缩写应转换成自然、无歧义的口语表达')
+    const routeRequest = requests.find(item => item.messages[0]?.content.some(block => (
+      block.type === 'text' && block.text.includes('判断下面这句话应该由语音助手直接回答')
+    )))
+    const routePrompt = routeRequest?.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+    expect(routePrompt).toContain('acknowledgement')
+    expect(routePrompt).toContain('不能声称任务已经完成')
   })
 
   it('lets a frontend voice Agent drive one exact text-Agent task', async () => {

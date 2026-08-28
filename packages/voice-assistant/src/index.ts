@@ -676,6 +676,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     binding: Binding,
     voiceSessionId: VoiceSessionId,
     call: TaskCommandCall,
+    taskIdOverride?: VoiceTaskId,
   ): Promise<void> => {
     const complete = (result: TaskCommandResult): void => {
       ctx.voice.completeTaskCommand(voiceSessionId, call.id, result)
@@ -697,13 +698,15 @@ export function apply(ctx: Context, config: Config = {}): void {
           route = await routeFrontendInput(ctx, requireSourceSession(binding).events, call.command.input)
         } catch (error: unknown) {
           ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
-          route = { action: 'delegate' }
+          route = { action: 'delegate', acknowledgement: DEFAULT_DELEGATION_ACKNOWLEDGEMENT }
         }
         if (route.action === 'delegate') {
+          const taskId = VoiceTaskId(randomUUID())
+          speakFragment(binding, taskId, route.acknowledgement)
           await onTaskCommand(binding, voiceSessionId, {
             id: call.id,
             command: { type: 'realtime_delegation', input: call.command.input },
-          })
+          }, taskId)
           return
         }
         complete({ kind: 'handled' })
@@ -716,7 +719,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           return
         }
         cancelRewrite(binding)
-        const taskId = VoiceTaskId(randomUUID())
+        const taskId = taskIdOverride ?? VoiceTaskId(randomUUID())
         const continuous = (config.taskSessionPolicy ?? 'isolated') === 'continuous'
         let created: Awaited<ReturnType<typeof createTaskAgent>> & { readonly taskSessionId: SessionId }
         try {
@@ -1057,12 +1060,24 @@ function speechFragments(text: string, flush: boolean): { fragments: string[]; r
 
 type FrontendRoute =
   | { readonly action: 'chat'; readonly reply: string }
-  | { readonly action: 'delegate' }
+  | { readonly action: 'delegate'; readonly acknowledgement: string }
+
+const DEFAULT_DELEGATION_ACKNOWLEDGEMENT = '好的，我先查看一下。'
+const MAX_DELEGATION_ACKNOWLEDGEMENT_LENGTH = 40
+
+function delegationAcknowledgement(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_DELEGATION_ACKNOWLEDGEMENT
+  const normalized = value.replace(/\s+/gu, ' ').trim()
+  if (normalized === '' || normalized.length > MAX_DELEGATION_ACKNOWLEDGEMENT_LENGTH) {
+    return DEFAULT_DELEGATION_ACKNOWLEDGEMENT
+  }
+  return normalized
+}
 
 async function routeFrontendInput(ctx: Context, events: readonly SessionEvent[], input: string): Promise<FrontendRoute> {
   let llm: LlmRuntime | undefined
   try { llm = ctx.get('llm') as LlmRuntime | undefined } catch { llm = undefined }
-  if (llm === undefined) return { action: 'delegate' }
+  if (llm === undefined) return { action: 'delegate', acknowledgement: DEFAULT_DELEGATION_ACKNOWLEDGEMENT }
   const selection = ctx.agentDefaultModel.currentSelection()
   const recentConversation = events.flatMap(event => {
     if (event.type !== 'voice/utterance-end' || event.data.state !== 'completed') return []
@@ -1076,10 +1091,12 @@ async function routeFrontendInput(ctx: Context, events: readonly SessionEvent[],
         '判断下面这句话应该由语音助手直接回答，还是委派给后台编码 Agent。',
         '普通寒暄、日常对话、无需读取本地项目或调用工具即可回答的问题，选择 chat，并直接给出自然简洁的中文回复。',
         '只有需要查看或修改工作区文件、运行命令、测试、安装依赖或执行其他工具操作时，才选择 delegate。',
+        '选择 delegate 时，同时给出一句简短自然的 acknowledgement，表示接下来要做什么。不能声称任务已经完成、已经找到结果，也不要提后台 Agent、工具或路由。',
+        'acknowledgement 只能有一句，最多 40 个字符，例如“好的，我先检查一下相关代码。”。',
         '只输出一行 JSON，不要 Markdown。格式只能是：',
         '{"action":"chat","reply":"..."}',
         '或：',
-        '{"action":"delegate"}',
+        '{"action":"delegate","acknowledgement":"..."}',
         '',
         '最近对话：',
         recentConversation || '（无）',
@@ -1104,7 +1121,9 @@ async function routeFrontendInput(ctx: Context, events: readonly SessionEvent[],
   if (parsed.action === 'chat' && typeof parsed.reply === 'string' && parsed.reply.trim() !== '') {
     return { action: 'chat', reply: parsed.reply.trim() }
   }
-  if (parsed.action === 'delegate') return { action: 'delegate' }
+  if (parsed.action === 'delegate') {
+    return { action: 'delegate', acknowledgement: delegationAcknowledgement(parsed.acknowledgement) }
+  }
   throw new Error('voice frontend router returned an invalid decision')
 }
 

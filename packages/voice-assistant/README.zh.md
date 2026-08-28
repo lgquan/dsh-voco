@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-把一个已连接语音传输绑定到当前持久 Session 的 consumer。在 `speech-shell` 模式下，没有活跃语音任务时，完整转写进入该 Session 的 `followup`；任务运行中则进入 `steer`。在 `frontend-agent` 模式下，`route_transcription` 会把最近的持久语音对话和当前转写交给所选前台模型。普通对话直接回答；需要工具的工作才转换成已验证的后台委派。任务活跃期间，后续转写会更新同一个任务。
+把一个已连接语音传输绑定到当前持久 Session 的 consumer。在 `speech-shell` 模式下，没有活跃语音任务时，完整转写进入该 Session 的 `followup`；任务运行中则进入 `steer`。在 `frontend-agent` 模式下，`route_transcription` 会把最近的持久语音对话和当前转写交给所选前台模型。普通对话直接回答；需要工具的工作则由同一次路由调用生成一句贴合请求的简短确认语，在已验证的后台委派启动前立即显示并播报，不增加额外模型调用。任务活跃期间，后续转写会更新同一个任务。
 
 `realtime_delegation` 分配权威 `VoiceTaskId`、确保后台 Task Session 存在，再在线路上以 `delegation_id` 返回该 id。随附 profile 使用 `continuous` 策略：一个来源 Voice Session 创建或恢复一个固定的普通 Task Agent Session；兼容的 `isolated` 策略才会为每次委派新建 Session。Task Agent 继承 Voice Session 的 workspace、工作目录、preset 组合、provider 与 model。它收到的任务消息是 `<realtime_delegation>` 信封，包含 id、自包含输入与可选转写增量；Voice Session 记录带目标 `SessionId` 的 `voice/task-delegated` 供界面跳转。`send_task_message` 通过该 Task Agent 的 `steer` 发送带准确 id 的 `<realtime_delegation_update>`，`cancel_task` 调用该 Agent 的 `cancel({kind:'user'})`。未知、已终止或正在取消的 id 会返回类型化拒绝且不修改 Agent；重复 provider call id 在这个 consumer 运行前由 `dsh-voice` 抑制。
 
