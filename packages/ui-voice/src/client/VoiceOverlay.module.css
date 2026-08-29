@@ -46,7 +46,7 @@
 
 .status {
   overflow: hidden;
-  flex: 0 0 4em;
+  flex: 0 1 auto;
   min-width: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
