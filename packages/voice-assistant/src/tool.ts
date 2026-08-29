@@ -54,6 +54,9 @@ export function installVoiceMessageTool(
       + 'independently rewrites every reported event against the user request. Keep detail complete enough to '
       + 'support an accurate rewrite. The full report remains in the task UI. The voice assistant does not automatically '
       + 'see your transcript, tool output, or reasoning. '
+      + 'Treat the task as read-only unless the current user request explicitly authorizes creating, modifying, deleting, renaming, or moving files. '
+      + 'Searching, checking, reading, and explaining do not authorize file changes; ambiguous requests for an artifact or organized explanation '
+      + 'mean return the result in chat and ask before writing. After explicit authorization, change only the necessary scope. '
       + 'A result is held until the turn actually succeeds. A question leaves the task waiting for a user reply. '
       + 'Reporting never ends your turn. Do not use this tool when no realtime voice delegation is active.',
   })

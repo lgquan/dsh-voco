@@ -229,6 +229,14 @@ describe('voice assistant driver', () => {
         '用户原话：',
         '你帮我看呀。',
         '',
+        '任务边界与写操作规则：',
+        '- task 只能重述用户明确表达的目标，不得擅自增加新的交付物。',
+        '- 搜索、查询、核实、阅读和分析类任务默认只读，不创建或修改工作区文件。',
+        '- “给我一个结果”“给我一个产物”“整理一下”“形成说明”等模糊表达，不代表允许写文件。',
+        '- 只有用户明确要求创建、修改、删除、重命名或移动文件时，才允许执行对应操作。',
+        '- 获得明确授权后，也只能操作完成当前任务所必需的范围。',
+        '- 无法判断用户是否要求写文件时，先询问确认。',
+        '',
         '请以“当前任务”为最高优先级执行；前置背景只用于理解和消歧，不要把旧对话当成待执行任务。',
       ].join('\n'))
       expect(block.text).not.toContain('这段内容不应覆盖真实用户原话')
@@ -510,6 +518,7 @@ describe('voice assistant driver', () => {
     const routePrompt = routeRequest?.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
     expect(routePrompt).toContain('acknowledgement')
     expect(routePrompt).toContain('不要固定使用“好的”或其他相同开头')
+    expect(routePrompt).toContain('搜索、查询、核实、阅读和分析类任务默认只读')
     expect(routePrompt).toContain('不能声称任务已经完成')
   })
 
