@@ -25,6 +25,7 @@
       config:
         maxPendingObservations: 64
         restoreConversation: true
+        memoryRecallTimeoutMs: 250
         maxRestoredUtterances: 24
         taskSessionPolicy: continuous
         completedAnnouncement: 任务已完成。

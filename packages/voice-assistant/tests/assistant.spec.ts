@@ -82,6 +82,86 @@ function installAgentFactory(ctx: Context, configure?: (created: CreatedAgent) =
 }
 
 describe('voice assistant driver', () => {
+  it('continues frontend routing when workspace memory exceeds the soft timeout', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LlmRuntime)
+    const routePrompts: string[] = []
+    class RouteAdapter extends LlmAdapter {
+      async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        const prompt = options.messages[0]?.content
+          .flatMap(block => block.type === 'text' ? [block.text] : [])
+          .join('') ?? ''
+        routePrompts.push(prompt)
+        yield { type: 'text-delta', index: 0, text: '{"action":"chat","reply":"路由已经继续。"}' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+    ctx.llm.registerAdapter(['test'], new RouteAdapter())
+    await ctx.plugin(AgentDefaultModel, { provider: 'test', model: 'test' })
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(VoiceRuntime, { provider: 'test' })
+    class SlowWorkspaceMemory extends Service {
+      constructor(serviceCtx: Context) { super(serviceCtx, 'workspaceMemory') }
+      recall = vi.fn(() => new Promise<never>(() => {}))
+      checkpoint = vi.fn(async () => ({ status: 'buffered' as const }))
+    }
+    await ctx.plugin(SlowWorkspaceMemory)
+
+    const displayed: string[] = []
+    const completions: TaskCommandResult[] = []
+    let emit: ((event: VoiceProviderEvent) => void) | undefined
+    let pendingSpeech = ''
+    const providerSession: VoiceProviderSession = {
+      audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
+      interactionMode: 'frontend-agent',
+      appendAudio: () => {}, commitAudio: () => {}, interruptResponse: () => {}, playbackEnded: () => {},
+      appendTaskObservation: () => {},
+      appendSpeechText: text => { pendingSpeech += text },
+      requestResponse: () => {
+        if (pendingSpeech !== '') displayed.push(pendingSpeech)
+        pendingSpeech = ''
+      },
+      completeTaskCommand: (_callId, result) => { completions.push(result) },
+      close: () => Promise.resolve(),
+    }
+    ctx.voice.registerProvider({
+      id: 'test', available: () => true,
+      connect: input => { emit = input.emit; return Promise.resolve(providerSession) },
+    })
+    const source = ctx.sessions.create(SessionId('voice-memory-timeout'))
+    const sourceAgent = {
+      id: source.id,
+      options: { provider: 'test', model: 'test' },
+      session: source,
+      inbox: {} as Agent['inbox'],
+      status: 'idle' as const,
+      ctx,
+      cancel: vi.fn(),
+      whenIdle: () => Promise.resolve(),
+      runMaintenance: () => Promise.reject(new Error('not used')),
+      send: () => {}, steer: vi.fn(), inject: () => {}, followup: vi.fn(),
+    } satisfies Agent
+    ctx.agents.register(sourceAgent)
+    await ctx.plugin({ apply, inject }, { memoryRecallTimeoutMs: 10 })
+    await ctx.voice.open(source.id)
+
+    const startedAt = Date.now()
+    emit?.({
+      type: 'task.command',
+      call: {
+        id: VoiceCommandCallId('route-memory-timeout'),
+        command: { type: 'route_transcription', input: '继续回答这个问题' },
+      },
+    })
+    await vi.waitFor(() => { expect(displayed).toEqual(['路由已经继续。']) })
+    expect(Date.now() - startedAt).toBeLessThan(150)
+    expect(completions).toContainEqual({ kind: 'handled' })
+    expect(routePrompts.at(-1)).toContain('Workspace 长期记忆：\n（无）')
+  })
+
   it('uses a grounded local-time tool and delegates a context-resolved task', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 7, 29, 2, 55, 0))

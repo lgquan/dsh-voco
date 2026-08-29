@@ -50,6 +50,8 @@ export interface Config {
   readonly cancelledAnnouncement?: string
   /** Spoken announcement restored after service shutdown interrupted a task. */
   readonly interruptedAnnouncement?: string
+  /** Maximum time the frontend waits for Workspace Memory before routing continues. */
+  readonly memoryRecallTimeoutMs?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -61,6 +63,7 @@ export const Config: z<Config> = z.object({
   failedAnnouncement: z.string().default('任务失败了，请查看屏幕上的错误信息。'),
   cancelledAnnouncement: z.string().default('任务已取消。'),
   interruptedAnnouncement: z.string().default('上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。'),
+  memoryRecallTimeoutMs: z.natural().min(1).default(250),
 })
 
 /** Plugin-owned durable session event types, registered with core at load. */
@@ -183,6 +186,37 @@ function optionalSessionTitle(ctx: Context): SessionTitleLike | undefined {
   }
 }
 
+type SoftRecallResult<T> =
+  | { readonly kind: 'resolved'; readonly value: T }
+  | { readonly kind: 'timeout' }
+  | { readonly kind: 'error'; readonly error: unknown }
+
+function recallWithSoftTimeout<T>(operation: () => Promise<T>, timeoutMs: number): Promise<SoftRecallResult<T>> {
+  const deadline = Math.max(1, timeoutMs)
+  return new Promise(resolve => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      resolve({ kind: 'timeout' })
+    }, deadline)
+    void operation().then(
+      value => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve({ kind: 'resolved', value })
+      },
+      error => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve({ kind: 'error', error })
+      },
+    )
+  })
+}
+
 function workspaceMemoryReference(memory: WorkspaceMemoryContext): string {
   const sections: string[] = []
   if (memory.summary.trim() !== '') sections.push(`稳定摘要：\n${memory.summary.trim()}`)
@@ -296,6 +330,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const audioResponsesSeen = new Set<string>()
   const maxPending = config.maxPendingObservations ?? 64
   const maxRestoredUtterances = config.maxRestoredUtterances ?? 24
+  const memoryRecallTimeoutMs = config.memoryRecallTimeoutMs ?? 250
   const loadConversationMemory = async (sessionId: SessionId): Promise<VoiceConversationMemory | undefined> => {
     const live = ctx.sessions.get(sessionId)
     const events = live?.events ?? (await ctx.get('sessionPersistence')?.inspect(sessionId))?.events
@@ -964,9 +999,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           return
         }
         const routeStartedAt = Date.now()
+        const input = call.command.input
         debugVoiceLatency('route-command-received', {
           callId: String(call.id),
-          inputLength: call.command.input.length,
+          inputLength: input.length,
         })
         let route: FrontendRoute
         try {
@@ -975,27 +1011,35 @@ export function apply(ctx: Context, config: Config = {}): void {
           if (memory !== undefined) {
             const memoryStartedAt = Date.now()
             debugVoiceLatency('memory-recall-start', { callId: String(call.id) })
-            try {
-              memoryReference = workspaceMemoryReference(await memory.recall({
+            const recallResult = await recallWithSoftTimeout(() => memory.recall({
                 sessionId: binding.sessionId,
-                query: call.command.input,
+                query: input,
                 maxBytes: 5000,
-              }))
+              }), memoryRecallTimeoutMs)
+            if (recallResult.kind === 'resolved') {
+              memoryReference = workspaceMemoryReference(recallResult.value)
               debugVoiceLatency('memory-recall-end', {
                 callId: String(call.id),
                 durationMs: Date.now() - memoryStartedAt,
                 referenceLength: memoryReference.length,
               })
-            } catch (error: unknown) {
+            } else if (recallResult.kind === 'timeout') {
+              debugVoiceLatency('memory-recall-timeout', {
+                callId: String(call.id),
+                durationMs: Date.now() - memoryStartedAt,
+                timeoutMs: memoryRecallTimeoutMs,
+                fallback: 'empty-reference',
+              })
+            } else {
               debugVoiceLatency('memory-recall-error', {
                 callId: String(call.id),
                 durationMs: Date.now() - memoryStartedAt,
-                error: String(error),
+                error: String(recallResult.error),
               })
-              ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+              ctx.logger.warn(recallResult.error instanceof Error ? recallResult.error : new Error(String(recallResult.error)))
             }
           }
-          route = await routeFrontendInput(ctx, requireSourceSession(binding).events, call.command.input, memoryReference)
+          route = await routeFrontendInput(ctx, requireSourceSession(binding).events, input, memoryReference)
           debugVoiceLatency('route-decision', {
             callId: String(call.id),
             action: route.action,
@@ -1009,7 +1053,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           })
           ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
           route = fallbackDelegation(
-            call.command.input,
+            input,
             recentConversationText(requireSourceSession(binding).events),
           )
         }
