@@ -293,6 +293,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const bindings = new Map<SessionId, Binding>()
   const taskBindings = new Map<SessionId, Binding>()
   const handles = new Map<SessionId, AgentHandle>()
+  const audioResponsesSeen = new Set<string>()
   const maxPending = config.maxPendingObservations ?? 64
   const maxRestoredUtterances = config.maxRestoredUtterances ?? 24
   const loadConversationMemory = async (sessionId: SessionId): Promise<VoiceConversationMemory | undefined> => {
@@ -962,23 +963,50 @@ export function apply(ctx: Context, config: Config = {}): void {
           })
           return
         }
+        const routeStartedAt = Date.now()
+        debugVoiceLatency('route-command-received', {
+          callId: String(call.id),
+          inputLength: call.command.input.length,
+        })
         let route: FrontendRoute
         try {
           let memoryReference = ''
           const memory = optionalWorkspaceMemory(ctx)
           if (memory !== undefined) {
+            const memoryStartedAt = Date.now()
+            debugVoiceLatency('memory-recall-start', { callId: String(call.id) })
             try {
               memoryReference = workspaceMemoryReference(await memory.recall({
                 sessionId: binding.sessionId,
                 query: call.command.input,
                 maxBytes: 5000,
               }))
+              debugVoiceLatency('memory-recall-end', {
+                callId: String(call.id),
+                durationMs: Date.now() - memoryStartedAt,
+                referenceLength: memoryReference.length,
+              })
             } catch (error: unknown) {
+              debugVoiceLatency('memory-recall-error', {
+                callId: String(call.id),
+                durationMs: Date.now() - memoryStartedAt,
+                error: String(error),
+              })
               ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
             }
           }
           route = await routeFrontendInput(ctx, requireSourceSession(binding).events, call.command.input, memoryReference)
+          debugVoiceLatency('route-decision', {
+            callId: String(call.id),
+            action: route.action,
+            durationMs: Date.now() - routeStartedAt,
+          })
         } catch (error: unknown) {
+          debugVoiceLatency('route-error', {
+            callId: String(call.id),
+            durationMs: Date.now() - routeStartedAt,
+            error: String(error),
+          })
           ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
           route = fallbackDelegation(
             call.command.input,
@@ -987,6 +1015,12 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         if (route.action === 'delegate') {
           const taskId = VoiceTaskId(randomUUID())
+          debugVoiceLatency('ack-queued', {
+            callId: String(call.id),
+            taskId,
+            routeDurationMs: Date.now() - routeStartedAt,
+            textLength: route.acknowledgement.length,
+          })
           speakFragment(binding, taskId, route.acknowledgement)
           await onTaskCommand(binding, voiceSessionId, {
             id: call.id,
@@ -1011,6 +1045,12 @@ export function apply(ctx: Context, config: Config = {}): void {
         const taskId = delegationOverride?.taskId ?? VoiceTaskId(randomUUID())
         const requestText = delegationOverride?.requestText ?? call.command.input
         const continuous = (config.taskSessionPolicy ?? 'isolated') === 'continuous'
+        const delegationStartedAt = Date.now()
+        debugVoiceLatency('delegation-init-start', {
+          callId: String(call.id),
+          taskId,
+          policy: continuous ? 'continuous' : 'isolated',
+        })
         let created: Awaited<ReturnType<typeof createTaskAgent>> & { readonly taskSessionId: SessionId }
         try {
           if (continuous) {
@@ -1020,7 +1060,22 @@ export function apply(ctx: Context, config: Config = {}): void {
             const { selection } = taskModelSelection(binding)
             created = { taskSessionId, ...await createTaskAgent(binding, taskSessionId, selection) }
           }
-        } catch (error) { backendUnavailable(error); return }
+          debugVoiceLatency('delegation-init-end', {
+            callId: String(call.id),
+            taskId,
+            taskSessionId: created.taskSessionId,
+            durationMs: Date.now() - delegationStartedAt,
+          })
+        } catch (error) {
+          debugVoiceLatency('delegation-init-error', {
+            callId: String(call.id),
+            taskId,
+            durationMs: Date.now() - delegationStartedAt,
+            error: String(error),
+          })
+          backendUnavailable(error)
+          return
+        }
         const message = createUserMessage({
           content: [{ type: 'text', text: call.command.input }],
           source: { kind: 'user' },
@@ -1198,6 +1253,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         enqueue(binding, () => { beginUtterance(binding, event.utteranceId, 'user').text = event.text })
         return
       case 'transcription.completed':
+        debugVoiceLatency('transcription-completed', {
+          voiceSessionId: String(session.id),
+          utteranceId: String(event.utteranceId),
+          textLength: event.text.length,
+        })
         enqueue(binding, async () => {
           endUtterance(binding, event.utteranceId, 'user', 'completed', event.text)
           if (session.interactionMode === 'speech-shell' && binding.voiceSessionId === session.id) {
@@ -1236,7 +1296,17 @@ export function apply(ctx: Context, config: Config = {}): void {
         debugVoiceLatency('audio-started')
         return
       case 'output_audio.delta':
+        if (!audioResponsesSeen.has(String(event.responseId))) {
+          audioResponsesSeen.add(String(event.responseId))
+          debugVoiceLatency('audio-first-delta', {
+            responseId: String(event.responseId),
+            audioBytes: event.audio.byteLength,
+          })
+        }
+        return
       case 'output_audio.done':
+        audioResponsesSeen.delete(String(event.responseId))
+        return
       case 'task.observation':
       case 'error':
       case 'closed':
@@ -1465,6 +1535,16 @@ async function routeFrontendInput(
   const recentConversation = recentConversationText(events)
   if (llm === undefined) return fallbackDelegation(input, recentConversation)
   const selection = ctx.agentDefaultModel.currentSelection()
+  const routeLlmStartedAt = Date.now()
+  let routeLlmFirstTextAt: number | undefined
+  debugVoiceLatency('route-llm-start', {
+    provider: selection.provider,
+    model: selection.model,
+    reasoningEffort: selection.reasoningEffort,
+    inputLength: input.length,
+    recentConversationLength: recentConversation.length,
+    workspaceMemoryLength: workspaceMemory.length,
+  })
   const message = createUserMessage({
     content: [{
       type: 'text',
@@ -1503,14 +1583,29 @@ async function routeFrontendInput(
     source: { kind: 'plugin', plugin: 'voice-assistant' },
   })
   let output = ''
-  for await (const chunk of llm.stream({
-    provider: selection.provider,
-    model: selection.model,
-    ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
-    messages: [message],
-    system: '你是语音前台路由器。严格按要求输出一个 JSON 对象。不要把普通对话委派给后台编码 Agent。',
-  })) {
-    if (chunk.type === 'text-delta') output += chunk.text
+  try {
+    for await (const chunk of llm.stream({
+      provider: selection.provider,
+      model: selection.model,
+      ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+      messages: [message],
+      system: '你是语音前台路由器。严格按要求输出一个 JSON 对象。不要把普通对话委派给后台编码 Agent。',
+    })) {
+      if (chunk.type !== 'text-delta') continue
+      if (routeLlmFirstTextAt === undefined) {
+        routeLlmFirstTextAt = Date.now()
+        debugVoiceLatency('route-llm-first-text', {
+          delayMs: routeLlmFirstTextAt - routeLlmStartedAt,
+        })
+      }
+      output += chunk.text
+    }
+  } finally {
+    debugVoiceLatency('route-llm-end', {
+      durationMs: Date.now() - routeLlmStartedAt,
+      firstTextDelayMs: routeLlmFirstTextAt === undefined ? undefined : routeLlmFirstTextAt - routeLlmStartedAt,
+      outputLength: output.length,
+    })
   }
   const normalized = output.trim().replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '')
   const parsed = JSON.parse(normalized) as Record<string, unknown>
