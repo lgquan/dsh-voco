@@ -37,6 +37,7 @@ The plugin uses `XingChenAGI/XingChenASR-V3.2-Ultra` for cloud speech recognitio
 - Speaks a short contextual acknowledgement before starting delegated Agent work.
 - Keeps full task reports in the task UI while speaking a concise, purpose-written result.
 - Supports interruption, browser navigation, reconnects, and restored conversation history.
+- Pure voice sessions get a concise title from the first meaningful voice request, with the transcription as a fallback when the title model is unavailable.
 - Ships the server and browser surfaces as one public npm package.
 
 ## Configuration

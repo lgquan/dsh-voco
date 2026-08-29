@@ -314,6 +314,74 @@ describe('voice assistant driver', () => {
     expect(ctx.agents.get(session.id)).toBe(agent)
   })
 
+  it('generates one concise title from the first meaningful voice request', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(AgentDefaultModel, { provider: 'test', model: 'test' })
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const title = { value: undefined as string | undefined, rename: vi.fn((_: unknown, value: string) => { title.value = value }) }
+    class FakeSessionTitle extends Service {
+      constructor(serviceCtx: Context) { super(serviceCtx, 'sessionTitle') }
+      get = vi.fn(() => title.value === undefined ? undefined : { title: title.value })
+      rename = title.rename
+    }
+    await ctx.plugin(FakeSessionTitle)
+    class TitleAdapter extends LlmAdapter {
+      async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        if (options.system?.includes('语音会话标题生成器') === true) {
+          yield { type: 'text-delta', index: 0, text: '检查项目依赖。' }
+        } else {
+          yield { type: 'text-delta', index: 0, text: '已经处理完成' }
+        }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+    ctx.llm.registerAdapter(['test'], new TitleAdapter())
+    await ctx.plugin(VoiceRuntime, { provider: 'test' })
+    let emit: ((event: VoiceProviderEvent) => void) | undefined
+    const providerSession: VoiceProviderSession = {
+      audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
+      interactionMode: 'speech-shell',
+      appendAudio: () => {}, commitAudio: () => {}, interruptResponse: () => {}, playbackEnded: () => {},
+      appendTaskObservation: () => {}, requestResponse: () => {}, completeTaskCommand: () => {},
+      close: () => Promise.resolve(),
+    }
+    ctx.voice.registerProvider({
+      id: 'test', available: () => true,
+      connect: (input) => { emit = input.emit; return Promise.resolve(providerSession) },
+    })
+    const source = ctx.sessions.create(SessionId('voice-title'))
+    const sourceAgent = {
+      id: source.id,
+      options: { provider: 'test', model: 'test' },
+      session: source,
+      inbox: {} as Agent['inbox'],
+      status: 'idle' as const,
+      ctx,
+      cancel: vi.fn(),
+      whenIdle: () => Promise.resolve(),
+      runMaintenance: () => Promise.reject(new Error('not used')),
+      send: () => {}, steer: vi.fn(), inject: () => {}, followup: vi.fn(),
+    } satisfies Agent
+    ctx.agents.register(sourceAgent)
+    await ctx.plugin({ apply, inject }, {})
+    await ctx.voice.open(source.id)
+    await settle()
+
+    emit?.({ type: 'transcription.completed', utteranceId: VoiceUtteranceId('title-greeting'), text: '你好' })
+    await settle()
+    expect(title.rename).not.toHaveBeenCalled()
+    emit?.({ type: 'transcription.completed', utteranceId: VoiceUtteranceId('title-request'), text: '帮我检查项目依赖' })
+    await vi.waitFor(() => { expect(title.rename).toHaveBeenCalledTimes(1) })
+    expect(title.value).toBe('检查项目依赖')
+    emit?.({ type: 'transcription.completed', utteranceId: VoiceUtteranceId('title-later'), text: '再看看测试' })
+    await settle()
+    expect(title.rename).toHaveBeenCalledTimes(1)
+  })
+
   it('rewrites a detail-only Agent result against the original request and streams identical UI and TTS text', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

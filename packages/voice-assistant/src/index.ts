@@ -134,6 +134,7 @@ interface Binding {
   interactionMode: VoiceInteractionMode | undefined
   voiceAttached: boolean
   voiceTurnMarked: boolean
+  voiceTitleRequested: boolean
   active: ActiveTask | undefined
   continuousTaskAgent: ContinuousTaskAgent | undefined
   lastTerminalTaskId: VoiceTaskId | undefined
@@ -161,9 +162,22 @@ interface WorkspaceMemoryLike {
   }): Promise<{ readonly status: 'buffered' | 'empty' | 'committed' | 'failed' }>
 }
 
+interface SessionTitleLike {
+  get(session: unknown): { readonly title: string } | undefined
+  rename(session: unknown, title: string): unknown
+}
+
 function optionalWorkspaceMemory(ctx: Context): WorkspaceMemoryLike | undefined {
   try {
     return (ctx as Context & { get(name: 'workspaceMemory'): WorkspaceMemoryLike | undefined }).get('workspaceMemory')
+  } catch {
+    return undefined
+  }
+}
+
+function optionalSessionTitle(ctx: Context): SessionTitleLike | undefined {
+  try {
+    return (ctx as Context & { get(name: 'sessionTitle'): SessionTitleLike | undefined }).get('sessionTitle')
   } catch {
     return undefined
   }
@@ -211,6 +225,69 @@ const REWRITE_EVENT_INSTRUCTIONS: Record<VoiceTaskEventType, string> = {
   error: '这是失败信息。明确说明没有完成、主要原因以及可行的下一步。',
 }
 
+const VOICE_TITLE_SYSTEM_PROMPT = `你是语音会话标题生成器。根据用户第一条有实际内容的语音请求，生成一个简短、准确、便于在会话列表中识别的中文标题。
+
+只输出标题本身，不要解释，不要引号，不要 Markdown，不要句末标点，不要使用“语音会话”“新会话”等泛化名称，不超过 12 个汉字。不要加入文件大小、行数、路径等执行细节。`
+
+function voiceTitleCandidate(value: string): string {
+  const normalized = value
+    .replace(/```[\s\S]*?```/gu, '')
+    .replace(/^\s*(?:标题|title)\s*[:：]\s*/iu, '')
+    .replace(/["'「」『』]/gu, '')
+    .split(/\r?\n/u, 1)[0]!
+    .replace(/[。！？!?；;，,：:]+$/u, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  return Array.from(normalized).slice(0, 12).join('')
+}
+
+function isMeaningfulVoiceTitleInput(value: string): boolean {
+  const normalized = value.replace(/\s+/gu, '').trim()
+  if (Array.from(normalized).length < 4) return false
+  return !/^(?:你好|您好|嗨|哈喽|喂|在吗|有人吗|测试|谢谢|好的)[，。！？!?、]*$/u.test(normalized)
+}
+
+async function generateVoiceSessionTitle(
+  ctx: Context,
+  session: unknown,
+  input: string,
+  titleService: SessionTitleLike,
+): Promise<void> {
+  let candidate = ''
+  try {
+    const llm = ctx.get('llm') as LlmRuntime | undefined
+    if (llm !== undefined) {
+      const selection = ctx.agentDefaultModel.currentSelection()
+      const message = createUserMessage({
+        content: [{ type: 'text', text: `用户第一条有效语音请求：${input}` }],
+        source: { kind: 'plugin', plugin: 'voice-assistant' },
+      })
+      let output = ''
+      for await (const chunk of llm.stream({
+        provider: selection.provider,
+        model: selection.model,
+        ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+        messages: [message],
+        system: VOICE_TITLE_SYSTEM_PROMPT,
+      })) {
+        if (chunk.type === 'text-delta') output += chunk.text
+      }
+      candidate = voiceTitleCandidate(output)
+    }
+  } catch (error: unknown) {
+    ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+  }
+  if (candidate === '') candidate = voiceTitleCandidate(input)
+  if (candidate === '' || titleService.get(session) !== undefined) return
+  try {
+    // Use the public title API once so the generated title is pinned against
+    // later automatic revisions while still allowing an explicit user rename.
+    titleService.rename(session, candidate)
+  } catch (error: unknown) {
+    ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+  }
+}
+
 /** Install the driver. @param ctx - composed Agent and voice context. @param config - driver copy and queue bounds. */
 export function apply(ctx: Context, config: Config = {}): void {
   const bindings = new Map<SessionId, Binding>()
@@ -242,6 +319,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         interactionMode: undefined,
         voiceAttached: false,
         voiceTurnMarked: false,
+        voiceTitleRequested: false,
         active: undefined,
         continuousTaskAgent: undefined,
         lastTerminalTaskId: undefined,
@@ -795,13 +873,22 @@ export function apply(ctx: Context, config: Config = {}): void {
     responseId?: VoiceResponseId,
   ): void => {
     const utterance = beginUtterance(binding, utteranceId, role, responseId)
-    requireSourceSession(binding).append('voice/utterance-end', {
+    const sourceSession = requireSourceSession(binding)
+    sourceSession.append('voice/utterance-end', {
       utteranceId,
       role,
       text: finalText ?? utterance.text,
       state,
       ...(responseId === undefined ? {} : { responseId }),
     })
+    const utteranceText = finalText ?? utterance.text
+    if (role === 'user' && state === 'completed' && isMeaningfulVoiceTitleInput(utteranceText)) {
+      const titleService = optionalSessionTitle(ctx)
+      if (titleService !== undefined && !binding.voiceTitleRequested && titleService.get(sourceSession) === undefined) {
+        binding.voiceTitleRequested = true
+        void generateVoiceSessionTitle(ctx, sourceSession, utteranceText, titleService)
+      }
+    }
     binding.utterances.delete(utteranceId)
   }
 
