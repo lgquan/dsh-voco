@@ -6,6 +6,8 @@ Talk to your dsh coding Agent the way you talk to ChatGPT Advanced Voice — exc
 
 Say a request out loud and dsh answers conversationally in real time. Real work is delegated to one durable background Agent Session. The full report stays in the task UI, while voice speaks a purpose-written conversational result instead of reading the report.
 
+Maintainer architecture notes are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Interaction
 
 - **Cloud speech recognition**: browser audio uses only lightweight local level detection. After 1.5 seconds of silence, the utterance is wrapped as WAV and transcribed by SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra`. Ambient noise or an empty transcription does not interrupt a reply in progress; playback stops only after valid text is recognized. Replies use Edge TTS's Chinese Xiaoxiao voice with interruption support.
@@ -14,6 +16,7 @@ Say a request out loud and dsh answers conversationally in real time. Real work 
 - **Context-resolved task rewriting**: before delegation, the frontend turns elliptical speech into a self-contained current task and sends background context separately from the authoritative original utterance. The backend treats the current task as the instruction and the background only as disambiguation, so a phrase such as “take a look” does not become an unrelated repository inspection.
 - **Acknowledge, then delegate**: delegated work gets an immediate one-sentence acknowledgement before entering the fixed background Agent through `realtime_delegation`, with no extra model call.
 - **Continuous task context**: sequential delegations reuse one background Agent Session while retaining distinct delegation ids.
+- **Voice-session marker**: the sidebar waveform means that the session has successfully enabled Voice. Mixed sessions keep the marker whether text or voice came first; background Agent Sessions do not receive it.
 - **Independent conversational results**: the background Agent reports `progress | result | warning | error | question` events with complete facts in the sole `detail` field. The Voice layer rewrites detail against the original request and submits the coherent reply as one UI message and one TTS response. Edge TTS may synthesize sentences internally without creating separate chat bubbles.
 - **Recoverable two-session memory**: restarting voice or DSH restores recent source-Session conversation and its fixed background Agent Session binding. An interrupted task reports its last spoken progress but is never replayed automatically.
 - **Uninterrupted flow**: switching browser tabs or reconnecting never stops the live voice session or the task behind it.
