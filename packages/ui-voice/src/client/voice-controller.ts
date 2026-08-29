@@ -19,6 +19,7 @@ export interface VoiceClientSnapshot {
 interface VoiceTransport {
   close(): Promise<void>
   cancelTask(taskId: string): void
+  interruptResponse(): void
   setInputMuted(muted: boolean): void
   submitText(text: string): void
 }
@@ -151,6 +152,17 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
     if (taskId === '') throw new Error('voice task id is required')
     if (this.transport === undefined) throw new Error('voice task cancellation requires an active connection')
     this.transport.cancelTask(taskId)
+  }
+
+  /** Stop the active assistant response without ending the Voice Session. */
+  interruptResponse(): void {
+    if (this.snapshot.state === 'off' || this.snapshot.state === 'error' || this.snapshot.sessionId === undefined) {
+      throw new Error('voice response interruption requires an active connection')
+    }
+    const transport = this.transport ?? this.openingTransport
+    if (transport === undefined) throw new Error('voice response interruption requires an active connection')
+    transport.interruptResponse()
+    this.setState('listening')
   }
 
   /** Submit composer text as a voice turn, queueing it while the transport connects. */
@@ -338,6 +350,11 @@ async function openVoiceTransport(
     cancelTask: (taskId) => {
       if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
       socket.send(JSON.stringify({ type: 'task.cancel', taskId }))
+    },
+    interruptResponse: () => {
+      if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
+      socket.send(JSON.stringify({ type: 'response.interrupt' }))
+      stopPlayback()
     },
     setInputMuted: (muted) => {
       if (inputMuted === muted) return

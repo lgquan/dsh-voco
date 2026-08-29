@@ -1,3 +1,4 @@
+.controls { display: inline-flex; align-items: center; gap: 2px; }
 .button {
   display: inline-flex;
   align-items: center;
@@ -17,6 +18,8 @@
   color: var(--dsw-alias-state-error-primary);
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
+.interruptButton { color: var(--dsw-alias-state-error-primary); }
+.interruptButton:hover { color: var(--dsw-alias-state-error-primary); }
 .button[data-muted='true']:hover { background: color-mix(in srgb, currentColor 18%, transparent); }
 .button[data-state='speaking'][data-muted='false'] { animation: voice-pulse 1.2s ease-in-out infinite; }
 @keyframes voice-pulse { 50% { opacity: .55; transform: scale(.94); } }

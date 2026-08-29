@@ -183,6 +183,28 @@ describe('VoiceController', () => {
     expect(controller.getSnapshot()).toEqual({ state: 'off', inputMuted: false, textById: {} })
   })
 
+  it('interrupts active playback without ending the Voice Session', async () => {
+    const controller = new VoiceController()
+    const socket = await start(controller)
+    socket.binary(new Int16Array([1, -1]).buffer)
+    const source = contexts[1]!.sources[0]!
+    expect(controller.getSnapshot().state).toBe('speaking')
+
+    controller.interruptResponse()
+
+    expect(socket.sent).toContain(JSON.stringify({ type: 'response.interrupt' }))
+    expect(source.stop).toHaveBeenCalledTimes(1)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'listening', sessionId: SESSION, inputMuted: false })
+    expect(socket.sent).not.toContain(JSON.stringify({ type: 'session.close' }))
+    await controller.stop()
+  })
+
+  it('rejects response interruption without an active connection', () => {
+    expect(() => new VoiceController().interruptResponse()).toThrow(
+      'voice response interruption requires an active connection',
+    )
+  })
+
   it('applies mute selected while connecting and preserves it across retry', async () => {
     const controller = new VoiceController()
     const opening = controller.start(SESSION)

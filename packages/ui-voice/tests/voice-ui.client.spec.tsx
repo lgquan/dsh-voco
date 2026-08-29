@@ -381,6 +381,7 @@ describe('Voice UI surfaces', () => {
   it('attaches Voice Mode to the current Session and controls the active transport', () => {
     const startVoice = vi.fn().mockResolvedValue(undefined)
     const retryVoice = vi.fn().mockResolvedValue(undefined)
+    const interruptResponse = vi.fn()
     const setVoiceMuted = vi.fn()
     const base = {
       ...runtimeProps(),
@@ -394,13 +395,23 @@ describe('Voice UI surfaces', () => {
         },
       }),
       useVoice: (selector: (snapshot: VoiceClientSnapshot) => unknown) => selector(voiceSnapshot()),
-      startVoice, retryVoice, setVoiceMuted,
+      startVoice, retryVoice, interruptResponse, setVoiceMuted,
     } as unknown as VoiceControlProps
     const view = render(<VoiceControl {...base} />)
     fireEvent.click(screen.getByRole('button', { name: '开始语音对话' }))
     expect(startVoice).toHaveBeenCalledWith(VOICE_SESSION)
+    expect(screen.queryByRole('button', { name: '打断播放' })).toBeNull()
+
+    for (const state of ['connecting', 'listening'] as const) {
+      view.rerender(<VoiceControl {...base} useVoice={selector => selector(voiceSnapshot({ state }))} />)
+      expect(screen.queryByRole('button', { name: '打断播放' })).toBeNull()
+    }
 
     view.rerender(<VoiceControl {...base} useVoice={selector => selector(voiceSnapshot({ state: 'speaking' }))} />)
+    const interrupt = screen.getByRole('button', { name: '打断播放' })
+    expect(interrupt).toBeTruthy()
+    fireEvent.click(interrupt)
+    expect(interruptResponse).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: '静音麦克风' }))
     expect(setVoiceMuted).toHaveBeenLastCalledWith(true)
 
@@ -415,6 +426,7 @@ describe('Voice UI surfaces', () => {
     view.rerender(<VoiceControl {...base} useVoice={selector => selector(voiceSnapshot({
       state: 'error', sessionId: VOICE_SESSION,
     }))} />)
+    expect(screen.queryByRole('button', { name: '打断播放' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '语音连接失败，点击重试' }))
     expect(retryVoice).toHaveBeenCalledTimes(1)
 
@@ -434,6 +446,7 @@ describe('Voice UI surfaces', () => {
       useVoice={selector => selector(voiceSnapshot())}
       startVoice={startVoice}
       retryVoice={vi.fn().mockResolvedValue(undefined)}
+      interruptResponse={vi.fn()}
       setVoiceMuted={vi.fn()}
     />)
     fireEvent.click(screen.getByRole('button', { name: 'Start voice conversation' }))
