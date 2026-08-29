@@ -13,7 +13,7 @@ export const zh = {
   'control.unmute': '解除静音',
   'overlay.connecting': '正在连接语音',
   'overlay.listening': '正在聆听',
-  'overlay.speaking': '正在播放回复',
+  'overlay.speaking': '正在回复',
   'overlay.error': '语音连接失败',
   'overlay.muted': '已静音',
   'overlay.stop': '结束',
