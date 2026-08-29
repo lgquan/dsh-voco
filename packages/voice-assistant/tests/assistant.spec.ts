@@ -1,4 +1,4 @@
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModel from '@deepseek-ai/dsh-agent-default-model'
@@ -121,6 +121,17 @@ describe('voice assistant driver', () => {
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime)
       await ctx.plugin(VoiceRuntime, { provider: 'test' })
+      const recallMemory = vi.fn(async () => ({
+        scope: 'ws-test',
+        summary: '该项目使用持续复用的后台 Agent。',
+        matches: [{ id: 'mem-voice', content: '用户希望语音聊天共享 Workspace 长期记忆。' }],
+      }))
+      class FakeWorkspaceMemory extends Service {
+        constructor(serviceCtx: Context) { super(serviceCtx, 'workspaceMemory') }
+        recall = recallMemory
+        checkpoint = vi.fn(async () => ({ status: 'buffered' as const }))
+      }
+      await ctx.plugin(FakeWorkspaceMemory)
 
       const displayed: string[] = []
       const commandResults: TaskCommandResult[] = []
@@ -222,6 +233,12 @@ describe('voice assistant driver', () => {
       ].join('\n'))
       expect(block.text).not.toContain('这段内容不应覆盖真实用户原话')
       expect(routePrompts.at(-1)).toContain('用户：这个时间不准呀。')
+      expect(routePrompts.at(-1)).toContain('用户希望语音聊天共享 Workspace 长期记忆。')
+      expect(recallMemory).toHaveBeenCalledWith({
+        sessionId: source.id,
+        query: '你帮我看呀。',
+        maxBytes: 5000,
+      })
     } finally {
       vi.useRealTimers()
     }
@@ -486,6 +503,7 @@ describe('voice assistant driver', () => {
     expect(prompt).toContain('这是最终结果。完整回答用户的问题')
     expect(request.system).toContain('用户感知上你就是同一个助手')
     expect(request.system).toContain('文件名、扩展名、路径和缩写应转换成自然、无歧义的口语表达')
+    expect(request.system).toContain('文件大小、行数、字数、字节数等附带统计信息')
     const routeRequest = requests.find(item => item.messages[0]?.content.some(block => (
       block.type === 'text' && block.text.includes('结合最近对话判断当前用户原话')
     )))
@@ -604,6 +622,13 @@ describe('voice assistant driver', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(VoiceRuntime, { provider: 'test' })
+    const checkpointMemory = vi.fn(async () => ({ status: 'buffered' as const }))
+    class FakeWorkspaceMemory extends Service {
+      constructor(serviceCtx: Context) { super(serviceCtx, 'workspaceMemory') }
+      recall = vi.fn(async () => ({ scope: 'ws-test', summary: '', matches: [] }))
+      checkpoint = checkpointMemory
+    }
+    await ctx.plugin(FakeWorkspaceMemory)
     const observations: TaskObservation[] = []
     const requestResponse = vi.fn()
     const completions: Array<{ callId: string; result: TaskCommandResult }> = []
@@ -675,6 +700,15 @@ describe('voice assistant driver', () => {
         state: 'completed',
       },
     ])
+    expect(checkpointMemory).toHaveBeenCalledWith({
+      sessionId: session.id,
+      reason: 'segment-end',
+      force: false,
+      messages: [
+        { id: 'frontend-chat', role: 'user', text: '只是聊天，不要启动任务' },
+        { id: 'assistant-response', role: 'assistant', text: '我会继续和你对话。' },
+      ],
+    })
 
     const startCall = {
       type: 'task.command' as const,

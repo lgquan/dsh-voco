@@ -19,6 +19,7 @@ Maintainer architecture notes are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.
 - **Voice-session marker**: the sidebar waveform means that the session has successfully enabled Voice. Mixed sessions keep the marker whether text or voice came first; background Agent Sessions do not receive it.
 - **Independent conversational results**: the background Agent reports `progress | result | warning | error | question` events with complete facts in the sole `detail` field. The Voice layer rewrites detail against the original request and submits the coherent reply as one UI message and one TTS response. Edge TTS may synthesize sentences internally without creating separate chat bubbles.
 - **Recoverable two-session memory**: restarting voice or DSH restores recent source-Session conversation and its fixed background Agent Session binding. An interrupted task reports its last spoken progress but is never replayed automatically.
+- **Optional Workspace long-term memory**: with `@flowingspring/dsh-workspace-memory` installed, the voice frontend recalls the current Workspace summary and relevant facts before routing or direct chat, then submits completed utterances for stage-based consolidation. Without it, Voco behaves exactly as before. The background Agent inherits the same `cwd`, so both Sessions share one durable memory scope.
 - **Uninterrupted flow**: switching browser tabs or reconnecting never stops the live voice session or the task behind it.
 
 ## Install
@@ -37,6 +38,9 @@ For a published installation, install the single package directly:
 ```sh
 dsh plugin --profile web add @flowingspring/dsh-voco
 ```
+
+Long-term memory is optional rather than a Voco dependency. Install the sibling
+`dsh-workspace-memory` project separately when needed; either plugin runs on its own.
 
 The local path command above remains useful when developing this repository.
 

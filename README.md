@@ -19,6 +19,7 @@
 - **语音会话标识**：侧栏波形图标表示该会话已经成功启用过语音；先文字后语音、先语音后文字的混合会话仍保留标识，后台 Agent 会话不会显示语音图标。
 - **独立口语化结果**：后台 Agent 用 `progress | result | warning | error | question` 事件和唯一的 `detail` 字段提交完整事实；语音层结合用户原话调用独立模型重写，并把整段回复作为一条页面消息和一次 TTS 响应。Edge TTS 内部仍按句合成，但不会拆成多个气泡。
 - **可恢复的双会话记忆**：停止再启动语音或重启 DSH 后，会恢复来源 Session 的最近对话及其固定后台 Agent Session 绑定；中断任务会告知上次进度，但不会自动重放。
+- **可选 Workspace 长期记忆**：安装 `@flowingspring/dsh-workspace-memory` 后，语音前台会在路由和普通聊天前读取当前 Workspace 的摘要与相关记忆，并把完成的语音片段交给 Memory 插件按阶段整理；未安装时完全保持原有行为。后台 Agent 继承相同 `cwd`，因此与 Voice Session 共享同一份长期记忆。
 - **不中断的体验**：浏览器切走、断线重连，正在跑的语音会话和后台任务都不会停。
 
 ## 安装
@@ -37,6 +38,9 @@ dsh plugin --profile web add "$repo\packages\voice-app"
 ```powershell
 dsh plugin --profile web add @flowingspring/dsh-voco
 ```
+
+长期记忆是可选能力，不是 Voco 的必需依赖。需要时另外安装本仓库同级目录的
+`dsh-workspace-memory`；只安装任意一个插件都可以独立运行。
 
 如果从源码开发，仍可使用上面的本地路径安装方式；这不会改变最终发行包的单包结构。
 
