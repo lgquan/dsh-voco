@@ -1285,7 +1285,7 @@ type FrontendRoute =
       readonly userRequest: string
     }
 
-const DEFAULT_DELEGATION_ACKNOWLEDGEMENT = '好的，我先查看一下。'
+const DEFAULT_DELEGATION_ACKNOWLEDGEMENT = '我先查看一下。'
 const MAX_DELEGATION_ACKNOWLEDGEMENT_LENGTH = 40
 const MAX_DELEGATED_TASK_LENGTH = 1_000
 const MAX_DELEGATION_BACKGROUND_LENGTH = 2_000
@@ -1383,7 +1383,8 @@ async function routeFrontendInput(
         '选择 delegate 时，必须结合最近对话补全省略指代，输出自包含的 task、只用于消歧的 background，并原样复制 user_request。',
         'task 是后台当前唯一要执行的任务；background 不能包含新的要求，也不要把旧任务写成待办。',
         '同时给出一句简短自然的 acknowledgement，表示接下来要做什么。不能声称任务已经完成、已经找到结果，也不要提后台 Agent、工具或路由。',
-        'acknowledgement 只能有一句，最多 40 个字符，例如“好的，我先检查一下相关代码。”。',
+        'acknowledgement 只能有一句，最多 40 个字符；不要固定使用“好的”或其他相同开头，要根据任务自然变化，并尽量避免重复最近对话中的句式。',
+        '可以使用“我先核实一下”“我来检查一下”“我去确认一下”等自然表达，只有语气合适时才使用“好的”。',
         '只输出一行 JSON，不要 Markdown。格式只能是：',
         '{"action":"chat","reply":"..."}',
         '或：',

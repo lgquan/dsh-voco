@@ -509,6 +509,7 @@ describe('voice assistant driver', () => {
     )))
     const routePrompt = routeRequest?.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
     expect(routePrompt).toContain('acknowledgement')
+    expect(routePrompt).toContain('不要固定使用“好的”或其他相同开头')
     expect(routePrompt).toContain('不能声称任务已经完成')
   })
 
