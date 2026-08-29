@@ -893,7 +893,10 @@ export function apply(ctx: Context, config: Config = {}): void {
           route = await routeFrontendInput(ctx, requireSourceSession(binding).events, call.command.input, memoryReference)
         } catch (error: unknown) {
           ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
-          route = fallbackDelegation(call.command.input)
+          route = fallbackDelegation(
+            call.command.input,
+            recentConversationText(requireSourceSession(binding).events),
+          )
         }
         if (route.action === 'delegate') {
           const taskId = VoiceTaskId(randomUUID())
@@ -1316,12 +1319,20 @@ function delegationField(value: unknown, name: string, maxLength: number): strin
   return normalized
 }
 
-function fallbackDelegation(input: string): Extract<FrontendRoute, { action: 'delegate' }> {
+function recentConversationText(events: readonly SessionEvent[]): string {
+  return events.flatMap(event => {
+    if (event.type !== 'voice/utterance-end' || event.data.state !== 'completed') return []
+    const text = event.data.text.trim()
+    return text === '' ? [] : [`${event.data.role === 'user' ? '用户' : '助手'}：${text}`]
+  }).slice(-12).join('\n')
+}
+
+function fallbackDelegation(input: string, background = ''): Extract<FrontendRoute, { action: 'delegate' }> {
   return {
     action: 'delegate',
     acknowledgement: DEFAULT_DELEGATION_ACKNOWLEDGEMENT,
     task: input.trim() || input,
-    background: '没有可用的额外背景。',
+    background: background || '没有可用的额外背景。',
     userRequest: input,
   }
 }
@@ -1336,14 +1347,6 @@ function delegationPrompt(route: Extract<FrontendRoute, { action: 'delegate' }>)
     '',
     '用户原话：',
     route.userRequest,
-    '',
-    '任务边界与写操作规则：',
-    '- task 只能重述用户明确表达的目标，不得擅自增加新的交付物。',
-    '- 搜索、查询、核实、阅读和分析类任务默认只读，不创建或修改工作区文件。',
-    '- “给我一个结果”“给我一个产物”“整理一下”“形成说明”等模糊表达，不代表允许写文件。',
-    '- 只有用户明确要求创建、修改、删除、重命名或移动文件时，才允许执行对应操作。',
-    '- 获得明确授权后，也只能操作完成当前任务所必需的范围。',
-    '- 无法判断用户是否要求写文件时，先询问确认。',
     '',
     '请以“当前任务”为最高优先级执行；前置背景只用于理解和消歧，不要把旧对话当成待执行任务。',
   ].join('\n')
@@ -1372,13 +1375,9 @@ async function routeFrontendInput(
 ): Promise<FrontendRoute> {
   let llm: LlmRuntime | undefined
   try { llm = ctx.get('llm') as LlmRuntime | undefined } catch { llm = undefined }
-  if (llm === undefined) return fallbackDelegation(input)
+  const recentConversation = recentConversationText(events)
+  if (llm === undefined) return fallbackDelegation(input, recentConversation)
   const selection = ctx.agentDefaultModel.currentSelection()
-  const recentConversation = events.flatMap(event => {
-    if (event.type !== 'voice/utterance-end' || event.data.state !== 'completed') return []
-    const text = event.data.text.trim()
-    return text === '' ? [] : [`${event.data.role === 'user' ? '用户' : '助手'}：${text}`]
-  }).slice(-12).join('\n')
   const message = createUserMessage({
     content: [{
       type: 'text',
