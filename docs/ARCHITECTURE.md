@@ -1,90 +1,90 @@
-# dsh-voco Architecture
+# dsh-voco 架构说明
 
-This document describes the stable boundaries between the packages in this repository. It is for maintainers and contributors; user installation and configuration remain in the root README.
+本文说明本仓库各个 package 的职责边界和运行关系，供维护者和贡献者使用。用户安装、配置和故障排查请以根目录的 README 为准。
 
-## Purpose
+## 项目目标
 
-`dsh-voco` adds a durable, realtime Voice surface to DSH without replacing the normal Session model. A Voice conversation is an ordinary DSH Session with additional `voice/*` events. Complex requests are executed by a separate, durable Agent Session and linked back to the Voice conversation.
+`dsh-voco` 在不替换 DSH 原有 Session 模型的前提下，增加一个持久化的实时语音界面。语音对话使用普通 DSH Session 保存，并通过 `voice/*` 事件扩展。复杂请求交给另一个持久化 Agent Session 执行，再把结果关联回语音会话。
 
-## Package Boundaries
+## Package 边界
 
-| Package | Responsibility |
+| Package | 职责 |
 | --- | --- |
-| `packages/voice` | Provider-neutral Voice capability: session events, transport-facing contracts, and lifecycle semantics. |
-| `packages/voice-web` | Browser WebSocket carrier between the UI and the Host Voice service. |
-| `packages/voice-local` | SiliconFlow ASR and Edge TTS provider implementation. |
-| `packages/voice-assistant` | Voice frontend routing, context-aware task rewriting, background Agent binding, and conversational result rewriting. |
-| `packages/ui-voice` | Browser controls, transcript/task renderers, mute state, Voice history, text bridge, and sidebar marker. |
-| `packages/voice-app` | Published bundle entry. It composes the server plugins and the browser client into `@flowingspring/dsh-voco`. |
+| `packages/voice` | 与 Provider 无关的语音能力：会话事件、传输接口和生命周期语义。 |
+| `packages/voice-web` | 浏览器与 Host 语音服务之间的 WebSocket 通道。 |
+| `packages/voice-local` | SiliconFlow 语音识别和 Edge TTS 语音合成 Provider。 |
+| `packages/voice-assistant` | 语音前台路由、带上下文的任务重述、后台 Agent 绑定和口语化结果改写。 |
+| `packages/ui-voice` | 浏览器控制器、会话消息/任务卡片、静音状态、语音历史、文字桥接和侧栏标识。 |
+| `packages/voice-app` | 发布包入口，把服务端插件和浏览器客户端组合为 `@flowingspring/dsh-voco`。 |
 
-Only `packages/voice-app` is installed by users. The other packages are workspace modules bundled into that public entry.
+用户只安装 `packages/voice-app`。其他 package 都是 workspace 内部模块，会在构建时打包进公开入口。
 
-## Runtime Topology
+## 运行拓扑
 
 ```text
-Browser UI
+浏览器 UI
   |
-  | WebSocket (voice session id)
+  | WebSocket（携带 Voice Session ID）
   v
-voice-web carrier
+voice-web 通道
   |
   v
-voice capability ---- voice-local ---- SiliconFlow ASR / Edge TTS
+voice 能力层 ---- voice-local ---- SiliconFlow ASR / Edge TTS
   |
-  +--> voice/* events appended to the source DSH Session
+  +--> voice/* 事件写入来源 DSH Session
   |
   +--> voice-assistant
           |
-          +--> chat/tool: answer in the source Session
+          +--> 聊天/轻工具：在来源 Session 中直接回答
           |
-          +--> delegate: create or resume a separate Agent Session
-                              |
-                              +--> progress/result events
-                              |
-                              +--> conversational rewrite + TTS
+          +--> 复杂任务：创建或恢复独立 Agent Session
+                                      |
+                                      +--> 进度/结果事件
+                                      |
+                                      +--> 口语化改写 + TTS
 ```
 
-The source Voice Session and the delegated Agent Session have different IDs. The Agent Session inherits the source working directory, but it is not itself a Voice Session.
+来源 Voice Session 和后台 Agent Session 使用不同的 ID。后台 Agent 继承来源会话的工作目录，但它本身不是语音会话。
 
-## Input and Routing Flow
+## 输入与路由流程
 
-1. `VoiceControl` starts or toggles the Voice controller for the selected source Session. The same microphone button enters Voice on the first click and toggles input mute afterward.
-2. The browser performs lightweight level detection, packages an utterance as WAV, and sends it through `voice-web`.
-3. `voice-local` transcribes the audio. Valid text becomes a durable Voice utterance in the source Session; silence and empty recognition results do not interrupt playback.
-4. `voice-assistant` combines the utterance with recent conversation and optional Workspace memory. It chooses one of three paths: direct chat, a deterministic lightweight tool, or delegation.
-5. Delegated requests are rewritten into a self-contained current task. Background context and the user's original wording are sent separately so short follow-ups such as “你帮我看呀” remain unambiguous.
-6. The result is rendered as one conversational reply and sent to Edge TTS. Detailed Agent progress remains in the Agent task UI.
+1. `VoiceControl` 为当前选中的来源 Session 启动语音控制器。第一次点击麦克风进入语音，之后点击同一个按钮切换静音。
+2. 浏览器只做轻量音量检测，把语音片段封装为 WAV，通过 `voice-web` 发送。
+3. `voice-local` 完成转写。有效文本会作为持久化 Voice utterance 写入来源 Session；纯静音和空转写不会中断正在播放的回复。
+4. `voice-assistant` 将语音文本与最近对话、可选 Workspace 记忆组合，选择直接聊天、确定性的轻工具或后台委派。
+5. 委派前，前台把省略指代重写成自包含的“当前任务”，并将前置背景和用户原话分开传给后台，避免“你帮我看呀”这类短句失去上下文。
+6. 后台结果被改写为一条自然的语音回复并交给 Edge TTS；完整的 Agent 进度和技术细节留在任务界面。
 
-## Session and Task Identity
+## 会话与任务身份
 
-The source Session remains the user's conversational history. Each source Session can reuse one continuous background Agent Session; individual requests still have their own delegation id. The binding is recorded by the `voice/task-session-bound` event and restored from durable history after reconnect or restart.
+来源 Session 是用户的主要对话历史。一个来源 Session 可以持续复用同一个后台 Agent Session，但每次请求仍拥有独立的 delegation id。绑定关系通过 `voice/task-session-bound` 事件记录，并在重连或重启后从持久化历史恢复。
 
-The sidebar Voice marker is a client-side index of source Session IDs. It is recorded after Voice connects successfully and is deliberately not attached to Agent Session IDs. A session that contains both text and Voice remains marked as Voice-enabled.
+侧栏语音标识是客户端维护的来源 Session ID 索引。语音成功连接后记录该 ID，因此文字先输入、语音后使用的混合会话仍显示波形图标。后台 Agent Session ID 不会写入这个索引，也不会显示语音图标。
 
-## UI Integration
+## UI 集成
 
-`packages/ui-voice/src/client/index.ts` registers these DSH UI slots:
+`packages/ui-voice/src/client/index.ts` 注册以下 DSH UI slots：
 
-- `conversation.input.right`: microphone control and mute toggle.
-- `shell.overlay`: active Voice status/controls and the sidebar session marker decorator.
-- `sidebar.footer.action`: persisted Voice history picker.
-- `conversation.chat.node`: Voice utterances and delegation task cards.
+- `conversation.input.right`：麦克风按钮和静音切换。
+- `shell.overlay`：活动语音状态/控制，以及侧栏会话标识装饰器。
+- `sidebar.footer.action`：持久化语音历史选择器。
+- `conversation.chat.node`：语音 utterance 和委派任务卡片。
 
-The current DSH workspace package does not expose a row-level sidebar slot. `VoiceSessionMarkers` therefore observes the host-owned session rows and decorates the existing 16px status slot by session key. It does not own row navigation, renaming, archiving, or ordering.
+当前 DSH workspace package 没有提供单条侧栏会话行的扩展 slot。因此 `VoiceSessionMarkers` 观察 Host 所有的会话行，并通过 React 行 key 精确找到会话，在已有的 16px 状态区域绘制图标。它不负责会话打开、重命名、归档或排序。
 
-## Persistence and Recovery
+## 持久化与恢复
 
-- DSH Session history is authoritative for `voice/*` events and task bindings.
-- `VoiceHistoryStore` keeps a small browser-local index so the client can identify Voice-enabled sessions in the host-owned sidebar.
-- The Voice controller can reconnect or retry without creating a new source Session.
-- Text submitted while Voice is connected is routed through the same Voice pipeline; offline text and image submissions use the native DSH path.
-- Stopping Voice tears down the browser transport but does not delete the source Session or its Agent binding.
+- DSH Session 历史是 `voice/*` 事件和任务绑定关系的权威来源。
+- `VoiceHistoryStore` 只保存一个轻量的浏览器本地索引，用于让客户端识别侧栏中的语音会话。
+- 语音控制器支持重连和重试，不会因为网络波动创建新的来源 Session。
+- 语音连接期间从输入框提交的纯文字也走语音处理链路；离线文字和带图片的提交继续走 DSH 原生路径。
+- 停止语音只释放浏览器传输，不删除来源 Session，也不删除后台 Agent 绑定。
 
-## Configuration and Operations
+## 配置与运行
 
-The published plugin loads with `dsh web` and must not be run as a separate background service. The ASR credential is `SILICONFLOW_API_KEY`. Silence and level thresholds are patched in `packages/voice-app/cordis.patch.yml`.
+发布包随 `dsh web` 加载，不应作为单独的后台服务运行。ASR 密钥配置项是 `SILICONFLOW_API_KEY`，静音和音量阈值在 `packages/voice-app/cordis.patch.yml` 中调整。
 
-Useful checks from the repository root:
+仓库根目录常用检查命令：
 
 ```powershell
 pnpm typecheck
@@ -92,9 +92,9 @@ pnpm test
 pnpm build
 ```
 
-## Change Guidelines
+## 修改原则
 
-- Keep provider-specific code behind `voice` contracts; do not make UI components depend on SiliconFlow or Edge TTS details.
-- Treat the source Session and delegated Agent Session as separate identity axes.
-- Add durable behavior through events or projections rather than browser-only state when it must survive devices or storage clearing.
-- Keep README content user-facing and update this document when package boundaries, event contracts, or lifecycle rules change.
+- Provider 相关实现必须留在 `voice` 合约之后，UI 组件不要直接依赖 SiliconFlow 或 Edge TTS 细节。
+- 始终把来源 Voice Session 和后台 Agent Session 当作两个独立的身份轴处理。
+- 必须跨设备或清除浏览器存储后仍保留的状态，应通过事件或 projection 持久化，而不是只放在浏览器本地。
+- README 只记录用户需要的安装和使用信息；package 边界、事件契约或生命周期改变时同步更新本文档。
