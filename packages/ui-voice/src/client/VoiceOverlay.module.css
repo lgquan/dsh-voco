@@ -4,8 +4,8 @@
   bottom: 18px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  max-width: min(520px, calc(100vw - 36px));
+  gap: 8px;
+  max-width: min(260px, calc(100vw - 36px));
   min-height: 36px;
   padding: 4px 6px 4px 12px;
   border: 1px solid var(--dsw-alias-border-l2);
@@ -64,7 +64,6 @@
 
 .root[data-muted='true'] .wave i { animation: none; }
 
-.link,
 .stop {
   flex: none;
   min-height: 28px;
@@ -77,9 +76,7 @@
   font: inherit;
 }
 
-.link:hover:not(:disabled),
 .stop:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.link:disabled { cursor: default; opacity: .45; }
 .stop { color: var(--dsw-alias-state-error-primary); }
 
 @keyframes voice-wave {

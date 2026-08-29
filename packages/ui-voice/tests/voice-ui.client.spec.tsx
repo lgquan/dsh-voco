@@ -11,15 +11,11 @@ import {
   VoiceControl, type VoiceControlInjected, type VoiceControlProps,
 } from '../src/client/VoiceControl.tsx'
 import {
-  VoiceHistoryAction, type VoiceHistoryActionProps,
-} from '../src/client/VoiceHistoryAction.tsx'
-import {
   VoiceDelegationView, type VoiceDelegationViewProps,
   VoiceUtteranceView, type VoiceUtteranceViewProps,
 } from '../src/client/VoiceNodeViews.tsx'
 import { VoiceOverlay, type VoiceOverlayProps } from '../src/client/VoiceOverlay.tsx'
 import { VoiceController, type VoiceClientSnapshot } from '../src/client/voice-controller.ts'
-import { VoiceHistoryStore } from '../src/client/voice-history.ts'
 import {
   voiceDelegationDefinition, voiceUtteranceDefinition,
 } from '../src/client/voice-definitions.ts'
@@ -454,25 +450,21 @@ describe('Voice UI surfaces', () => {
     expect(Object.keys(en)).toEqual(Object.keys(zh))
   })
 
-  it('keeps navigation and stop actions in the root overlay', () => {
-    const openVoiceSession = vi.fn()
+  it('keeps the stop action in the root overlay', () => {
     const stopVoice = vi.fn().mockResolvedValue(undefined)
     const props = {
       useVoice: (selector: (snapshot: VoiceClientSnapshot) => unknown) => selector(voiceSnapshot({
         state: 'listening', sessionId: VOICE_SESSION,
       })),
-      useSessions: (selector: (state: SessionListState) => unknown) => selector(listState()),
       useWorkspaces: vi.fn(),
-      openVoiceSession,
       stopVoice,
       t: zhT,
     } as unknown as VoiceOverlayProps
     const view = render(<VoiceOverlay {...props} />)
     expect(screen.getByText('正在聆听')).toBeTruthy()
     expect(screen.queryByText('已静音')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '返回语音对话' }))
+    expect(screen.queryByRole('button', { name: '返回语音对话' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '结束' }))
-    expect(openVoiceSession).toHaveBeenCalledWith(VOICE_SESSION)
     expect(stopVoice).toHaveBeenCalledTimes(1)
     view.rerender(<VoiceOverlay {...props} useVoice={selector => selector(voiceSnapshot({
       state: 'speaking', sessionId: VOICE_SESSION, inputMuted: true,
@@ -481,51 +473,8 @@ describe('Voice UI surfaces', () => {
     expect(screen.queryByText('正在播放回复')).toBeNull()
     view.rerender(<VoiceOverlay {...props} useVoice={selector => selector(voiceSnapshot({ state: 'error' }))} />)
     expect(screen.getByText('语音连接失败')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '返回语音对话' })).toBeNull()
     view.rerender(<VoiceOverlay {...props} useVoice={selector => selector(voiceSnapshot())} />)
     expect(screen.queryByText('正在聆听')).toBeNull()
-  })
-
-  it('opens persisted Voice Sessions from the sidebar history', () => {
-    const history = new VoiceHistoryStore()
-    history.record(TASK_SESSION, 1)
-    history.record(VOICE_SESSION, 2)
-    const openSession = vi.fn()
-    const props = {
-      ...runtimeProps(),
-      wide: true,
-      useVoice: (selector: (snapshot: VoiceClientSnapshot) => unknown) => selector(voiceSnapshot({
-        state: 'listening', sessionId: VOICE_SESSION,
-      })),
-      useVoiceHistory: (
-        selector: (snapshot: ReturnType<typeof history.snapshot.getSnapshot>) => unknown,
-      ) => selector(history.snapshot.getSnapshot()),
-      useSessions: (selector: (state: SessionListState) => unknown) => selector(listState([
-        VOICE_SESSION, TASK_SESSION,
-      ])),
-      openSession,
-    } as unknown as VoiceHistoryActionProps
-    const view = render(<VoiceHistoryAction {...props} />)
-    fireEvent.click(screen.getByRole('button', { name: '打开语音历史' }))
-    expect(screen.getByRole('dialog', { name: '语音对话' })).toBeTruthy()
-    expect(screen.getByText('通话中')).toBeTruthy()
-    fireEvent.keyDown(document, { key: 'Enter' })
-    expect(screen.getByRole('dialog', { name: '语音对话' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '关闭语音历史' }))
-    fireEvent.click(screen.getByRole('button', { name: '打开语音历史' }))
-    fireEvent.click(screen.getByRole('button', { name: /task-session/u }))
-    expect(openSession).toHaveBeenCalledWith(TASK_SESSION)
-    expect(screen.queryByRole('dialog')).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: '打开语音历史' }))
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    view.rerender(<VoiceHistoryAction {...props} wide={false}
-      useVoiceHistory={selector => selector({ entries: [{ sessionId: 'missing' as SessionId, lastActiveAt: 1 }] })} />)
-    fireEvent.click(screen.getByRole('button', { name: '打开语音历史' }))
-    expect(screen.getByText('还没有语音对话')).toBeTruthy()
-    expect(screen.queryByText('语音历史')).toBeNull()
-    history.dispose()
   })
 })
 
@@ -569,7 +518,6 @@ describe('Voice UI assembly', () => {
       ['conversation.input.right', 'voice'],
       ['shell.overlay', 'voice-active'],
       ['shell.overlay', 'voice-session-markers'],
-      ['sidebar.footer.action', 'voice-history'],
       ['conversation.chat.node', 'voice-utterance'],
       ['conversation.chat.node', 'voice-delegation'],
     ])
@@ -595,21 +543,11 @@ describe('Voice UI assembly', () => {
     await control.retryVoice()
     expect(retry).toHaveBeenCalledTimes(2)
 
-    const overlay = (registrations[1]!.options.inject as () => {
-      openVoiceSession(id: SessionId): void
-      stopVoice(): Promise<void>
-    })()
-    overlay.openVoiceSession(TASK_SESSION)
+    const overlay = (registrations[1]!.options.inject as () => { stopVoice(): Promise<void> })()
     await overlay.stopVoice()
-    const history = (registrations[3]!.options.inject as () => {
-      hooks: { voiceHistory: { getSnapshot(): { entries: readonly { sessionId: SessionId }[] } } }
-      openSession(id: SessionId): void
-    })()
-    history.openSession(VOICE_SESSION)
-    expect(history.hooks.voiceHistory.getSnapshot().entries[0]?.sessionId).toBe(VOICE_SESSION)
-    const utterance = (registrations[4]!.options.inject as () => { hooks: { voice: unknown } })()
+    const utterance = (registrations[3]!.options.inject as () => { hooks: { voice: unknown } })()
     expect(utterance.hooks.voice).toBeInstanceOf(VoiceController)
-    const delegation = (registrations[5]!.options.inject as () => { openSession(id: SessionId): void })()
+    const delegation = (registrations[4]!.options.inject as () => { openSession(id: SessionId): void })()
     delegation.openSession(TASK_SESSION)
     expect(open).toHaveBeenLastCalledWith(TASK_SESSION)
 

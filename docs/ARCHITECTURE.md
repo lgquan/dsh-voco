@@ -65,9 +65,8 @@ voice 能力层 ---- voice-local ---- SiliconFlow ASR / Edge TTS
 
 `packages/ui-voice/src/client/index.ts` 注册以下 DSH UI slots：
 
-- `conversation.input.right`：麦克风按钮和静音切换。
+- `conversation.input.right`：麦克风按钮和静音切换；AI 播放时额外显示打断播放按钮。
 - `shell.overlay`：活动语音状态/控制，以及侧栏会话标识装饰器。
-- `sidebar.footer.action`：持久化语音历史选择器。
 - `conversation.chat.node`：语音 utterance 和委派任务卡片。
 
 当前 DSH workspace package 没有提供单条侧栏会话行的扩展 slot。因此 `VoiceSessionMarkers` 观察 Host 所有的会话行，并通过 React 行 key 精确找到会话，在已有的 16px 状态区域绘制图标。它不负责会话打开、重命名、归档或排序。

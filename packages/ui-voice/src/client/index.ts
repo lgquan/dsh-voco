@@ -4,7 +4,6 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { VoiceControl, type VoiceControlInjected } from './VoiceControl.tsx'
-import { VoiceHistoryAction, type VoiceHistoryActionInjected } from './VoiceHistoryAction.tsx'
 import {
   VoiceDelegationView, type VoiceDelegationInjected,
   VoiceUtteranceView, type VoiceUtteranceInjected,
@@ -75,11 +74,7 @@ export function apply(ctx: ClientContext): void {
     interruptResponse: () => { controller.interruptResponse() },
     setVoiceMuted: (muted) => { controller.setInputMuted(muted) },
   })
-  const voiceOverlayInjected = (): VoiceOverlayInjected => ({
-    hooks: { voice: controller },
-    openVoiceSession: (id) => { ctx.sessions.open(id) },
-    stopVoice,
-  })
+  const voiceOverlayInjected = (): VoiceOverlayInjected => ({ hooks: { voice: controller }, stopVoice })
   const voiceSessionMarkersInjected = (): VoiceSessionMarkersInjected => ({
     hooks: { voiceHistory: history.snapshot },
   })
@@ -89,14 +84,6 @@ export function apply(ctx: ClientContext): void {
     openSession: (id) => { ctx.sessions.open(id) },
     cancelTask: (id) => { controller.cancelTask(id) },
   })
-  const historyInjected = (): VoiceHistoryActionInjected => ({
-    hooks: { voice: controller, voiceHistory: history.snapshot },
-    openSession: (id) => {
-      history.record(id)
-      ctx.sessions.open(id)
-    },
-  })
-
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-voice: dictionaries')
   ctx.effect(() => async () => { await controller.stop() }, 'ui-voice: transport teardown')
   ctx.effect(() => () => { textSubmit.dispose() }, 'ui-voice: text submit bridge teardown')
@@ -124,13 +111,6 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: voiceSessionMarkersInjected,
   }, VoiceSessionMarkers))
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'voice-history',
-    order: 10,
-    locale: NS,
-    inject: historyInjected,
-  }, VoiceHistoryAction))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'voice-utterance',
