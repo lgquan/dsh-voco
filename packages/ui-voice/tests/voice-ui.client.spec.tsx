@@ -906,6 +906,14 @@ describe('Voice UI assembly', () => {
     disposeTextSubmit()
     const disposeHistory = effects[3]!() as () => void
     disposeHistory()
+    const disposeModelSelectionCompatibility = effects[4]!() as () => void
+    expect((ctx.sessions as unknown as { subagentAddress: (id: SessionId) => unknown }).subagentAddress(TASK_SESSION)).toBeUndefined()
+    disposeModelSelectionCompatibility()
+    expect((ctx.sessions as unknown as { subagentAddress: (id: SessionId) => unknown }).subagentAddress(TASK_SESSION)).toEqual({
+      parentSessionId: VOICE_SESSION,
+      childSessionId: TASK_SESSION,
+      mode: 'continuable',
+    })
   })
 
   it('starts voice from the source session even when it has no workspace', async () => {

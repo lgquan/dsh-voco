@@ -524,7 +524,14 @@ describe('voice assistant driver', () => {
     class TitleAdapter extends LlmAdapter {
       async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
         if (options.system?.includes('语音会话标题生成器') === true) {
-          yield { type: 'text-delta', index: 0, text: '检查项目依赖。' }
+          const prompt = options.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+          yield {
+            type: 'text-delta',
+            index: 0,
+            text: prompt?.includes('全面检查') === true
+              ? '修复 TypeScript 构建与流程 👨‍👩‍👧‍👦 pipeline configuration。'
+              : '检查项目依赖。',
+          }
         } else {
           yield { type: 'text-delta', index: 0, text: '已经处理完成' }
         }
@@ -581,9 +588,9 @@ describe('voice assistant driver', () => {
     await vi.waitFor(() => { expect(createdAgents).toHaveLength(1) })
     const child = createdAgents[0]!
     expect(child.session.events.find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({
-      label: '检查项目依赖',
+      label: '修复 TypeScript 构建与流程 👨‍👩‍👧‍👦',
     })
-    expect(titles.get(child.session)).toBe('检查项目依赖')
+    expect(titles.get(child.session)).toBe('修复 TypeScript 构建与流程 👨‍👩‍👧‍👦')
     expect(child.followup.mock.calls[0]?.[0].content).toEqual([{ type: 'text', text: delegatedRequest }])
   })
 

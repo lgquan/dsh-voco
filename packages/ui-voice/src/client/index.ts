@@ -28,6 +28,31 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export const inject = ['conversation', 'conversationEvents', 'slots', 'sessions', 'workspaces', 'locale', 'remote']
 
+type SessionAddress = {
+  readonly parentSessionId: SessionId
+  readonly childSessionId: SessionId
+  readonly mode: 'one-shot' | 'continuable'
+}
+
+/**
+ * The Harness model-selection UI intentionally hides addressed children. Voice
+ * tasks are ordinary durable Agent Sessions, so let that official UI use the
+ * same model directory as the parent while retaining navigationAddress for
+ * child routing and breadcrumbs.
+ */
+function enableChildModelSelection(ctx: ClientContext): void {
+  const sessions = ctx.sessions as typeof ctx.sessions & {
+    subagentAddress: (sessionId: SessionId) => SessionAddress | undefined
+    navigationAddress?: (sessionId: SessionId) => SessionAddress | undefined
+  }
+  const original = sessions.subagentAddress
+  if (typeof original !== 'function') return
+  ctx.effect(() => {
+    sessions.subagentAddress = () => undefined
+    return () => { sessions.subagentAddress = original }
+  }, 'ui-voice: child model selection compatibility')
+}
+
 /** Public archive-manager RPC surface. Kept structural so the voice package
  * remains optional and does not take a hard dependency on the community plugin. */
 interface ArchiveManagerWorkspaceRegistry {
@@ -140,7 +165,7 @@ export function apply(ctx: ClientContext): void {
         navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
         openSubagent?: (address: { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' }) => void
       }
-      const address = sessions.subagentAddress?.(id) ?? sessions.navigationAddress?.(id)
+        const address = sessions.navigationAddress?.(id) ?? sessions.subagentAddress?.(id)
       if (address !== undefined && sessions.openSubagent !== undefined) {
         sessions.openSubagent(address)
         return
@@ -174,7 +199,7 @@ export function apply(ctx: ClientContext): void {
         navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
         openSubagent?: (address: { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' }) => void
       }
-      const address = sessions.subagentAddress?.(id) ?? sessions.navigationAddress?.(id)
+      const address = sessions.navigationAddress?.(id) ?? sessions.subagentAddress?.(id)
       if (address !== undefined && sessions.openSubagent !== undefined) {
         sessions.openSubagent(address)
         return
@@ -187,6 +212,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => async () => { await controller.stop() }, 'ui-voice: transport teardown')
   ctx.effect(() => () => { textSubmit.dispose() }, 'ui-voice: text submit bridge teardown')
   ctx.effect(() => () => { history.dispose() }, 'ui-voice: history persistence teardown')
+  enableChildModelSelection(ctx)
   ctx.conversationEvents.register(voiceUtteranceDefinition)
   ctx.conversationEvents.register(voiceDelegationDefinition)
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({

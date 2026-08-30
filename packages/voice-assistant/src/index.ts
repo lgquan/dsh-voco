@@ -5,11 +5,11 @@ import { createRequire } from 'node:module'
 import { extname, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { Agent, AgentHandle, ModelSelection } from '@deepseek-ai/dsh-agent'
+import { installModelSelection, type Agent, type AgentHandle, type ModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { createUserMessage, type LlmRuntime } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
-import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
+import { foldSubagentDescriptor, snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { foldRequestHeader, KNOWN_SESSION_EVENT_TYPES, SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-workspace'
@@ -168,6 +168,12 @@ interface Binding {
   chain: Promise<void>
   rewriteGeneration: number
   rewriteAbort: AbortController | undefined
+}
+
+interface ChildModelSelection {
+  readonly parentSessionId: SessionId
+  readonly ref: ModelSelectionRef
+  readonly dispose: () => void
 }
 
 interface TokenMeterLike {
@@ -684,9 +690,38 @@ const REWRITE_EVENT_INSTRUCTIONS: Record<VoiceTaskEventType, string> = {
   error: '这是失败信息。明确说明没有完成、主要原因以及可行的下一步。',
 }
 
-const VOICE_TITLE_SYSTEM_PROMPT = `你是语音会话标题生成器。根据用户第一条有实际内容的语音请求，生成一个简短、准确、便于在会话列表中识别的中文标题。
+const VOICE_TITLE_MAX_WIDTH = 30
 
-只输出标题本身，不要解释，不要引号，不要 Markdown，不要句末标点，不要使用“语音会话”“新会话”等泛化名称，不超过 12 个汉字。不要加入文件大小、行数、路径等执行细节。`
+const VOICE_TITLE_SYSTEM_PROMPT = `你是语音会话标题生成器。根据用户第一条有实际内容的语音请求，生成一个简短、准确、便于在会话列表中识别的标题。
+
+只输出标题本身，不要解释，不要引号，不要 Markdown，不要句末标点，不要使用“语音会话”“新会话”等泛化名称，不超过 30 个显示宽度单位（汉字、全角字符和 emoji 按 2 个单位，英文字母、数字、半角符号和空格按 1 个单位）。不要加入文件大小、行数、路径等执行细节。`
+
+function voiceTitleGraphemeWidth(grapheme: string): number {
+  if (/[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Regional_Indicator}]/u.test(grapheme)) return 2
+  const codePoint = grapheme.codePointAt(0) ?? 0
+  if (
+    (codePoint >= 0x1100 && codePoint <= 0x115f)
+    || (codePoint >= 0x2329 && codePoint <= 0x232a)
+    || (codePoint >= 0x2e80 && codePoint <= 0x303e)
+    || (codePoint >= 0x3040 && codePoint <= 0x30ff)
+    || (codePoint >= 0x3100 && codePoint <= 0x312f)
+    || (codePoint >= 0x3130 && codePoint <= 0x318f)
+    || (codePoint >= 0x3190 && codePoint <= 0x31ff)
+    || (codePoint >= 0x3400 && codePoint <= 0x4dbf)
+    || (codePoint >= 0x4e00 && codePoint <= 0x9fff)
+    || (codePoint >= 0xa960 && codePoint <= 0xa97f)
+    || (codePoint >= 0xac00 && codePoint <= 0xd7ff)
+    || (codePoint >= 0xf900 && codePoint <= 0xfaff)
+    || (codePoint >= 0xfe10 && codePoint <= 0xfe6f)
+    || (codePoint >= 0xff01 && codePoint <= 0xff60)
+    || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
+  ) return 2
+  return 1
+}
+
+function voiceTitleGraphemes(value: string): string[] {
+  return Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value), part => part.segment)
+}
 
 function voiceTitleCandidate(value: string): string {
   const normalized = value
@@ -697,7 +732,15 @@ function voiceTitleCandidate(value: string): string {
     .replace(/[。！？!?；;，,：:]+$/u, '')
     .replace(/\s+/gu, ' ')
     .trim()
-  return Array.from(normalized).slice(0, 12).join('')
+  let width = 0
+  let result = ''
+  for (const grapheme of voiceTitleGraphemes(normalized)) {
+    const graphemeWidth = voiceTitleGraphemeWidth(grapheme)
+    if (width + graphemeWidth > VOICE_TITLE_MAX_WIDTH) break
+    result += grapheme
+    width += graphemeWidth
+  }
+  return result.trimEnd()
 }
 
 function isMeaningfulVoiceTitleInput(value: string): boolean {
@@ -766,6 +809,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   const bindings = new Map<SessionId, Binding>()
   const taskBindings = new Map<SessionId, Binding>()
   const handles = new Map<SessionId, AgentHandle>()
+  const childModelSelections = new Map<SessionId, ChildModelSelection>()
+  const childModelSelectionLoads = new Map<SessionId, Promise<ChildModelSelection | undefined>>()
   const audioResponsesSeen = new Set<string>()
   const maxPending = config.maxPendingObservations ?? 64
   const maxRestoredUtterances = config.maxRestoredUtterances ?? 24
@@ -777,6 +822,68 @@ export function apply(ctx: Context, config: Config = {}): void {
   const taskSessionHandoffMaxChars = config.taskSessionHandoffMaxChars ?? 12_000
   const evidenceCache = new Map<string, EvidenceCacheEntry>()
   const detailIndex = new Map<string, AgentDetailRecord[]>()
+
+  const rememberChildModelSelection = (
+    childSessionId: SessionId,
+    parentSessionId: SessionId,
+    agent: Agent,
+    selection: ModelSelection,
+  ): void => {
+    const existing = childModelSelections.get(childSessionId)
+    if (existing !== undefined) {
+      existing.ref.current = selection
+      return
+    }
+    const ref: ModelSelectionRef = { current: selection, assembled: undefined }
+    const dispose = installModelSelection(agent.ctx, ref)
+    childModelSelections.set(childSessionId, { parentSessionId, ref, dispose })
+  }
+
+  const childModelSelectionFor = async (sessionId: SessionId): Promise<ChildModelSelection | undefined> => {
+    const existing = childModelSelections.get(sessionId)
+    if (existing !== undefined) return existing
+    const loading = childModelSelectionLoads.get(sessionId)
+    if (loading !== undefined) return loading
+    const load = (async (): Promise<ChildModelSelection | undefined> => {
+      const session = ctx.sessions.get(sessionId)
+      const persisted = session === undefined
+        ? await ctx.get('sessionPersistence')?.inspect(sessionId)
+        : undefined
+      const header = session?.header ?? persisted?.meta
+      const events = session?.events ?? persisted?.events
+      if (header?.origin !== 'subagent' || header.parentSession === undefined || events === undefined) return undefined
+      if (foldSubagentDescriptor(events)?.provider !== 'voice-assistant') return undefined
+      const logged = foldRequestHeader(events)?.config
+      const defaults = ctx.agentDefaultModel.currentSelection()
+      const selection: ModelSelection = {
+        provider: logged?.provider ?? defaults.provider,
+        model: logged?.model ?? defaults.model,
+        ...(logged?.reasoningEffort === undefined ? {} : { reasoningEffort: logged.reasoningEffort }),
+      }
+      const agent = ctx.agents.get(sessionId)
+      if (agent !== undefined) {
+        rememberChildModelSelection(sessionId, header.parentSession, agent, selection)
+        return childModelSelections.get(sessionId)
+      }
+      // Cold voice children are not in the Agent registry after a Host restart.
+      // Reuse the assistant's normal resume path so presets, voice tools, and the
+      // model-selection listener are installed exactly as for a live child.
+      const resource = await resumeTaskAgent(bindingFor(header.parentSession), sessionId, selection)
+      return childModelSelections.get(sessionId) ?? (() => {
+        const ref: ModelSelectionRef = { current: selection, assembled: undefined }
+        const dispose = installModelSelection(resource.agent.ctx, ref)
+        const record = { parentSessionId: header.parentSession, ref, dispose }
+        childModelSelections.set(sessionId, record)
+        return record
+      })()
+    })()
+    childModelSelectionLoads.set(sessionId, load)
+    try {
+      return await load
+    } finally {
+      childModelSelectionLoads.delete(sessionId)
+    }
+  }
   const loadConversationMemory = async (sessionId: SessionId): Promise<VoiceConversationMemory | undefined> => {
     const live = ctx.sessions.get(sessionId)
     const events = live?.events ?? (await ctx.get('sessionPersistence')?.inspect(sessionId))?.events
@@ -1194,6 +1301,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         )
       },
     }), generatedLabelPromise])
+    rememberChildModelSelection(taskSessionId, binding.sessionId, handle.agent, selection)
     // The host subagent catalog classifies children from this durable
     // descriptor, not from SessionHeader.parentSession alone. Append it before
     // the first user message so the child is enumerable immediately.
@@ -1250,6 +1358,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }> => {
     const live = ctx.agents.get(taskSessionId)
     if (live !== undefined) {
+      rememberChildModelSelection(taskSessionId, binding.sessionId, live, selection)
       return {
         agent: live,
         disposeVoiceMessage: installVoiceMessageTool(
@@ -1277,6 +1386,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         )
       },
     })
+    rememberChildModelSelection(taskSessionId, binding.sessionId, handle.agent, selection)
     handles.set(taskSessionId, handle)
     if (disposeVoiceMessage === undefined) {
       handles.delete(taskSessionId)
@@ -2035,6 +2145,102 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     })
   })
+
+  // The core API proxy deliberately fences addressed children from the
+  // generic session.models/selectModel RPCs. Voice owns these child Agents,
+  // so expose the same catalog through the official client UI while keeping
+  // each child selection on its own Agent model-selection ref.
+  type ApiProxyLike = {
+    sessions: {
+      models: (request: unknown) => Promise<unknown>
+      selectModel: (request: unknown) => Promise<unknown>
+    }
+  }
+  const installApiProxyCompatibility = (apiProxy: ApiProxyLike): void => {
+    const originalModels = apiProxy.sessions.models
+    const originalSelectModel = apiProxy.sessions.selectModel
+    apiProxy.sessions.models = async (request: unknown): Promise<unknown> => {
+      const payload = (request as { payload?: { sessionId?: SessionId } }).payload
+      const sessionId = payload?.sessionId
+      const child = sessionId === undefined ? undefined : await childModelSelectionFor(sessionId)
+      if (child === undefined) return originalModels.call(apiProxy.sessions, request)
+      const parentRequest = {
+        ...(request as Record<string, unknown>),
+        payload: { ...payload, sessionId: child.parentSessionId },
+      }
+      const response = await originalModels.call(apiProxy.sessions, parentRequest)
+      if (typeof response !== 'object' || response === null) return response
+      const result = (response as { result?: unknown }).result
+      if (typeof result !== 'object' || result === null || (result as { ok?: unknown }).ok !== true) return response
+      const value = (result as { value?: unknown }).value
+      if (typeof value !== 'object' || value === null) return response
+      return {
+        ...response,
+        result: { ...result, value: { ...value, current: { ...child.ref.current } } },
+      }
+    }
+    apiProxy.sessions.selectModel = async (request: unknown): Promise<unknown> => {
+      const body = request as {
+        rpcId?: unknown
+        payload?: { sessionId?: SessionId; provider?: string; model?: string; reasoningEffort?: string }
+      }
+      const sessionId = body.payload?.sessionId
+      const child = sessionId === undefined ? undefined : await childModelSelectionFor(sessionId)
+      if (child === undefined) return originalSelectModel.call(apiProxy.sessions, request)
+      const provider = body.payload?.provider
+      const model = body.payload?.model
+      if (provider === undefined || model === undefined) return originalSelectModel.call(apiProxy.sessions, request)
+      try {
+        const llm = ctx.get('llm') as LlmRuntime
+        const resolved = await llm.resolveCallConfig({
+          provider,
+          model,
+          ...(body.payload?.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(body.payload.reasoningEffort) }),
+        })
+        const selected: ModelSelection = {
+          provider: resolved.provider,
+          model: resolved.model,
+          ...(resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort }),
+        }
+        child.ref.current = selected
+        return {
+          rpcId: body.rpcId,
+          result: { ok: true, value: { selected } },
+        }
+      } catch (error: unknown) {
+        return {
+          rpcId: body.rpcId,
+          result: {
+            ok: false,
+            error: {
+              code: 'model-unavailable',
+              message: error instanceof Error ? error.message : String(error),
+              details: { provider, model },
+            },
+          },
+        }
+      }
+    }
+    ctx.effect(() => () => {
+      apiProxy.sessions.models = originalModels
+      apiProxy.sessions.selectModel = originalSelectModel
+      for (const child of childModelSelections.values()) child.dispose()
+      childModelSelections.clear()
+    }, 'voice-assistant child model selection API')
+  }
+  const contextWithInject = ctx as Context & {
+    inject?: (services: readonly string[], callback: (context: Context & { apiProxy: ApiProxyLike }) => void) => unknown
+  }
+  if (typeof contextWithInject.inject === 'function') {
+    contextWithInject.inject(['apiProxy'], (apiContext) => { installApiProxyCompatibility(apiContext.apiProxy) })
+  } else {
+    try {
+      const apiProxy = ctx.get('apiProxy') as ApiProxyLike | undefined
+      if (apiProxy !== undefined) installApiProxyCompatibility(apiProxy)
+    } catch {
+      // Older test/host contexts may not expose the API proxy service.
+    }
+  }
 
   ctx.effect(() => async () => {
     await Promise.all([...bindings.values()].map(binding => binding.chain))

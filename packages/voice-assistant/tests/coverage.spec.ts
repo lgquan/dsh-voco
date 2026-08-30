@@ -195,7 +195,7 @@ function makeHarness(config: Parameters<typeof apply>[1] = {}): Harness {
     session: session as unknown as Agent['session'],
     inbox: {} as Agent['inbox'],
     status: 'idle',
-    ctx: {} as Context,
+    ctx: { on: () => () => {} } as unknown as Context,
     cancel: vi.fn(),
     whenIdle: () => Promise.resolve(),
     runMaintenance: () => Promise.reject(new Error('unused')),
