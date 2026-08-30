@@ -6,7 +6,7 @@ Browser conversation surface for the voice profile. The first microphone-button 
 
 Durable ASR and TTS utterances render as chat messages with a Voice badge. Each live ASR update replaces the prior interim caption; the exact text sent to TTS is projected into an open assistant utterance, persisted as completed only after playback ends, and persisted as interrupted when playback is stopped. Each delegated task renders as a collapsed compact status card that can expand its summary, cancel an active task, or open the fixed background Agent Session for the full trace.
 
-After a Voice transport opens successfully, the plugin records its source Session in a browser-local history index. The Voice history action at the sidebar foot lists those still present in the ordinary Session catalog, marks the active conversation, and opens a saved Session without adding Voice fields to Host projections or Workspace rows. The Session log remains the durable transcript; the index stores only Session ids and local recency.
+After a Voice transport opens successfully, the plugin records its source Session in a browser-local history index. The Voice history action at the sidebar foot lists those still present in the ordinary Session catalog, marks the active conversation, and opens a saved Session without adding Voice fields to Host projections or Workspace rows. Voice parent rows also refresh the host subagent catalog and expose a collapsible, indented child-task list; child clicks use the host parent/child address and never promote an Agent child to the top-level list. The Session log remains the durable transcript; the index stores only Session ids and local recency.
 
 ## Model Experience
 

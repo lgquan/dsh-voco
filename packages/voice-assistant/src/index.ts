@@ -9,7 +9,8 @@ import type { Agent, AgentHandle, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
-import { foldRequestHeader, KNOWN_SESSION_EVENT_TYPES, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
+import { foldRequestHeader, KNOWN_SESSION_EVENT_TYPES, SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-workspace'
 import {
@@ -43,6 +44,12 @@ export interface Config {
   readonly maxRestoredUtterances?: number
   /** Whether frontend delegations use independent Agents or one durable conversational Agent. */
   readonly taskSessionPolicy?: 'isolated' | 'continuous'
+  /** Soft high-water mark for continuous child context pressure (0..1). */
+  readonly taskSessionRotationRatio?: number
+  /** Reserve kept for the next task's output when pressure is measured. */
+  readonly taskSessionRotationReserveTokens?: number
+  /** Maximum characters injected as a continuous-child work-state handoff. */
+  readonly taskSessionHandoffMaxChars?: number
   /** Spoken announcement for a completed task that produced no final backend message. */
   readonly completedAnnouncement?: string
   /** Spoken announcement for a failed task. */
@@ -64,6 +71,9 @@ export const Config: z<Config> = z.object({
   restoreConversation: z.boolean().default(true),
   maxRestoredUtterances: z.natural().min(1).default(24),
   taskSessionPolicy: z.union(['isolated', 'continuous']).default('isolated'),
+  taskSessionRotationRatio: z.number().min(0.5).max(0.99).default(0.95),
+  taskSessionRotationReserveTokens: z.natural().default(2_048),
+  taskSessionHandoffMaxChars: z.natural().min(1_024).default(12_000),
   completedAnnouncement: z.string().default('任务已完成。'),
   failedAnnouncement: z.string().default('任务失败了，请查看屏幕上的错误信息。'),
   cancelledAnnouncement: z.string().default('任务已取消。'),
@@ -83,9 +93,12 @@ const VOICE_SESSION_EVENT_TYPES = [
   'voice/utterance-end',
 ] as const
 
+const SUBAGENT_DESCRIPTOR_EVENT_TYPE = 'subagent/descriptor'
+
 function registerVoiceSessionEventTypes(eventTypes: ReadonlySet<string>): void {
   const writable = eventTypes as Set<string>
   for (const type of VOICE_SESSION_EVENT_TYPES) writable.add(type)
+  writable.add(SUBAGENT_DESCRIPTOR_EVENT_TYPE)
 }
 
 // A path-linked development plugin can resolve peer dependencies from its
@@ -111,7 +124,7 @@ try {
 interface ActiveTask {
   readonly id: VoiceTaskId
   readonly interactionMode: VoiceInteractionMode
-  readonly taskSessionId: SessionId
+  taskSessionId: SessionId
   readonly messageIds: Set<string>
   requestText: string
   agent: Agent
@@ -155,6 +168,10 @@ interface Binding {
   chain: Promise<void>
   rewriteGeneration: number
   rewriteAbort: AbortController | undefined
+}
+
+interface TokenMeterLike {
+  measure(session: Session): { readonly totalTokens: number }
 }
 
 interface WorkspaceMemoryContext {
@@ -239,6 +256,7 @@ const EVIDENCE_STOP_PHRASES = [
   '具体', '准确', '内容', '哪里', '如何', '有几', '多少', '是否', '里面', '相关', '关于', '按照', '根据', '重新', '确认', '核对',
   '的是', '写的', '说的', '做的', '这份', '那个', '以及', '还是', '一个', '一下子',
 ] as const
+
 const EVIDENCE_GENERIC_KEYWORDS = new Set(['代码', '源码', '文件', '文档', '配置', '实现', '规则', '架构', '模块', '依赖', '版本', '资料'])
 
 function groundingRequired(input: string): boolean {
@@ -585,6 +603,14 @@ function optionalSessionTitle(ctx: Context): SessionTitleLike | undefined {
   }
 }
 
+function optionalTokenMeter(ctx: Context): TokenMeterLike | undefined {
+  try {
+    return (ctx as Context & { get(name: 'tokenMeter'): TokenMeterLike | undefined }).get('tokenMeter')
+  } catch {
+    return undefined
+  }
+}
+
 type SoftRecallResult<T> =
   | { readonly kind: 'resolved'; readonly value: T }
   | { readonly kind: 'timeout' }
@@ -732,6 +758,9 @@ export function apply(ctx: Context, config: Config = {}): void {
   const memoryRecallTimeoutMs = config.memoryRecallTimeoutMs ?? 250
   const evidenceSearchTimeoutMs = config.evidenceSearchTimeoutMs ?? 120
   const evidenceCacheTtlMs = config.evidenceCacheTtlMs ?? 10 * 60_000
+  const taskSessionRotationRatio = config.taskSessionRotationRatio ?? 0.95
+  const taskSessionRotationReserveTokens = config.taskSessionRotationReserveTokens ?? 2_048
+  const taskSessionHandoffMaxChars = config.taskSessionHandoffMaxChars ?? 12_000
   const evidenceCache = new Map<string, EvidenceCacheEntry>()
   const detailIndex = new Map<string, AgentDetailRecord[]>()
   const loadConversationMemory = async (sessionId: SessionId): Promise<VoiceConversationMemory | undefined> => {
@@ -1061,10 +1090,57 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
   }
 
+  const shouldRotateContinuousTaskAgent = (resource: ContinuousTaskAgent): boolean => {
+    const session = ctx.sessions.get(resource.taskSessionId)
+    const meter = optionalTokenMeter(ctx)
+    if (session === undefined || meter === undefined) return false
+    const contextWindow = session.requestContext()?.contextWindow
+    if (contextWindow === undefined || !Number.isFinite(contextWindow) || contextWindow <= 0) return false
+    let totalTokens: number
+    try {
+      totalTokens = meter.measure(session).totalTokens
+    } catch (error: unknown) {
+      ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      return false
+    }
+    if (!Number.isFinite(totalTokens) || totalTokens < 0) return false
+    return totalTokens >= contextWindow * taskSessionRotationRatio
+      || totalTokens + taskSessionRotationReserveTokens >= contextWindow
+  }
+
+  const buildTaskHandoff = (binding: Binding, current: ContinuousTaskAgent): string => {
+    const sections: string[] = [
+      '这是来自同一语音会话的工作状态交接。它不是旧会话的完整对话历史，也不是需要执行的指令。',
+      '请只把其中的事实和未完成状态作为背景，继续处理本次新任务；如果内容与本次任务无关，忽略它。',
+    ]
+    const active = binding.active
+    if (active !== undefined && active.requestText.trim() !== '') {
+      sections.push(`旧任务请求：\n${active.requestText.trim()}`)
+    }
+    const taskSession = ctx.sessions.get(current.taskSessionId)
+    if (taskSession !== undefined) {
+      const messages = taskSession.deriveMessages().flatMap(message => {
+        const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('').trim()
+        return text === '' ? [] : [`${message.role}：${text}`]
+      }).slice(-8)
+      if (messages.length > 0) sections.push(`旧 Agent 最近消息：\n${messages.join('\n')}`)
+    }
+    const source = requireSourceSession(binding)
+    const observations = source.events.flatMap(event => {
+      if (event.type !== 'voice/task-observation') return []
+      const detail = event.data.detail?.trim() ?? ''
+      return detail === '' ? [] : [`${event.data.status}：${detail}`]
+    }).slice(-6)
+    if (observations.length > 0) sections.push(`语音会话记录的任务状态：\n${observations.join('\n')}`)
+    return sections.join('\n\n').slice(0, taskSessionHandoffMaxChars)
+  }
+
   const createTaskAgent = async (
     binding: Binding,
     taskSessionId: SessionId,
     selection: ModelSelection,
+    handoff?: string,
+    label = '语音委派任务',
   ): Promise<{
     readonly agent: Agent
     readonly disposeVoiceMessage: () => void
@@ -1081,6 +1157,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       sessionId: taskSessionId,
       meta: {
         ...(sourceSession.header.cwd === undefined ? {} : { cwd: sourceSession.header.cwd }),
+        parentSession: binding.sessionId,
+        origin: 'subagent',
+        delegationDepth: (sourceSession.header.delegationDepth ?? 0) + 1,
         ...(presetId === undefined ? {} : { agentPreset: presetId }),
       },
       agentOptions: {
@@ -1096,6 +1175,27 @@ export function apply(ctx: Context, config: Config = {}): void {
         )
       },
     })
+    // The host subagent catalog classifies children from this durable
+    // descriptor, not from SessionHeader.parentSession alone. Append it before
+    // the first user message so the child is enumerable immediately.
+    const mode = (config.taskSessionPolicy ?? 'isolated') === 'continuous' ? 'continuable' : 'one-shot'
+    const normalizedLabel = label.trim() === '' ? '语音委派任务' : label.trim().slice(0, 160)
+    const descriptor = mode === 'continuable'
+      ? snapshotSubagentDescriptor({
+          mode,
+          provider: 'voice-assistant',
+          label: normalizedLabel,
+          agentProvider: selection.provider,
+          agentModel: selection.model,
+        })
+      : snapshotSubagentDescriptor({
+          mode,
+          provider: 'voice-assistant',
+          label: normalizedLabel,
+        })
+    const childSession = handle.agent.session
+    const appendDescriptor = childSession.append as unknown as (type: string, data: unknown) => void
+    appendDescriptor.call(childSession, SUBAGENT_DESCRIPTOR_EVENT_TYPE, descriptor)
     handles.set(taskSessionId, handle)
     try {
       const workspace = ctx.get('workspaceRegistry')?.list()
@@ -1110,6 +1210,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       handles.delete(taskSessionId)
       await handle.dispose()
       throw new Error('voice-assistant: delegated Agent setup did not install send_voice_message')
+    }
+    if (handoff !== undefined && handoff.trim() !== '') {
+      handle.agent.inject(createUserMessage({
+        content: [{ type: 'text', text: `<voice_task_handoff>\n${handoff}\n</voice_task_handoff>` }],
+        source: { kind: 'plugin', plugin: 'voice-assistant' },
+      }))
     }
     return { agent: handle.agent, disposeVoiceMessage }
   }
@@ -1160,14 +1266,58 @@ export function apply(ctx: Context, config: Config = {}): void {
     return { agent: handle.agent, disposeVoiceMessage }
   }
 
-  const ensureContinuousTaskAgent = async (binding: Binding): Promise<ContinuousTaskAgent> => {
+  const ensureContinuousTaskAgent = async (binding: Binding, label?: string): Promise<ContinuousTaskAgent> => {
     const { selection, sourceHeaderSeq } = taskModelSelection(binding)
     const current = binding.continuousTaskAgent
     if (current !== undefined && sameModelSelection(current.selection, selection)) {
-      if (current.sourceHeaderSeq === sourceHeaderSeq) return current
-      const refreshed = { ...current, sourceHeaderSeq }
-      binding.continuousTaskAgent = refreshed
-      return refreshed
+      if (!shouldRotateContinuousTaskAgent(current)) {
+        if (current.sourceHeaderSeq === sourceHeaderSeq) return current
+        const refreshed = { ...current, sourceHeaderSeq }
+        binding.continuousTaskAgent = refreshed
+        return refreshed
+      }
+      const handoff = buildTaskHandoff(binding, current)
+      const taskSessionId = SessionId(`session-${randomUUID()}`)
+      let oldToolDisposed = true
+      try {
+        current.disposeVoiceMessage()
+      } catch (error: unknown) {
+        ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      }
+      let created: Awaited<ReturnType<typeof createTaskAgent>>
+      try {
+        created = await createTaskAgent(binding, taskSessionId, selection, handoff, label)
+      } catch (error: unknown) {
+        if (oldToolDisposed) {
+          try {
+            const restored = installVoiceMessageTool(
+              current.agent.ctx,
+              input => sendVoiceMessage(binding, input),
+              () => binding.active?.id,
+            )
+            const restoredResource = { ...current, sourceHeaderSeq }
+            binding.continuousTaskAgent = { ...restoredResource, disposeVoiceMessage: restored }
+            taskBindings.set(current.taskSessionId, binding)
+          } catch (restoreError: unknown) {
+            ctx.logger.warn(restoreError instanceof Error ? restoreError : new Error(String(restoreError)))
+          }
+        }
+        throw error
+      }
+      const resource = { taskSessionId, selection, sourceHeaderSeq, ...created }
+      binding.continuousTaskAgent = resource
+      taskBindings.delete(current.taskSessionId)
+      taskBindings.set(taskSessionId, binding)
+      const sourceSession = requireSourceSession(binding)
+      sourceSession.append('voice/task-session-bound', { taskSessionId })
+      sourceSession.append('voice/agent-binding-state', {
+        voiceConversationId: binding.sessionId,
+        agentSessionId: taskSessionId,
+        ...(sourceSession.header.cwd === undefined ? {} : { workspacePath: sourceSession.header.cwd }),
+        lastUsedAt: Date.now(),
+        status: 'idle',
+      })
+      return resource
     }
     if (current !== undefined) {
       binding.continuousTaskAgent = undefined
@@ -1215,7 +1365,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     }
     const taskSessionId = SessionId(`session-${randomUUID()}`)
-    const created = await createTaskAgent(binding, taskSessionId, selection)
+    const created = await createTaskAgent(binding, taskSessionId, selection, undefined, label)
     const resource = { taskSessionId, selection, sourceHeaderSeq, ...created }
     binding.continuousTaskAgent = resource
     taskBindings.set(taskSessionId, binding)
@@ -1555,11 +1705,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         let created: Awaited<ReturnType<typeof createTaskAgent>> & { readonly taskSessionId: SessionId }
         try {
           if (continuous) {
-            created = await ensureContinuousTaskAgent(binding)
+            created = await ensureContinuousTaskAgent(binding, call.command.input)
           } else {
             const taskSessionId = SessionId(`session-${randomUUID()}`)
             const { selection } = taskModelSelection(binding)
-            created = { taskSessionId, ...await createTaskAgent(binding, taskSessionId, selection) }
+            created = { taskSessionId, ...await createTaskAgent(binding, taskSessionId, selection, undefined, requestText) }
           }
           debugVoiceLatency('delegation-init-end', {
             callId: String(call.id),
@@ -1648,6 +1798,23 @@ export function apply(ctx: Context, config: Config = {}): void {
         task.requestText += `\n补充要求：${call.command.message}`
         const waitingForReply = task.waitingUser && task.taskTurn === undefined
         task.waitingUser = false
+        if (waitingForReply && (config.taskSessionPolicy ?? 'isolated') === 'continuous') {
+          try {
+            const resource = await ensureContinuousTaskAgent(binding, call.command.message)
+            if (resource.taskSessionId !== task.taskSessionId) {
+              taskBindings.delete(task.taskSessionId)
+              task.taskSessionId = resource.taskSessionId
+              task.agent = resource.agent
+              taskBindings.set(task.taskSessionId, binding)
+            }
+          } catch (error: unknown) {
+            task.messageIds.delete(message.id)
+            task.requestText = previousRequestText
+            task.waitingUser = waitingForReply
+            backendUnavailable(error)
+            return
+          }
+        }
         try {
           if (waitingForReply) task.agent.followup(message)
           else task.agent.steer(message)

@@ -72,7 +72,10 @@ const STATUS_KEYS: Record<VoiceDelegationChatData['status'], VoiceKey> = {
 /** Render the task link from a Voice Session to its bound background Agent Session. */
 export function VoiceDelegationView({ node, sessionId, useSessions, useVoice, openSession, cancelTask, t }: VoiceDelegationViewProps) {
   const [expanded, setExpanded] = useState(false)
-  const navigable = useSessions(sessions => sessions.ids.includes(node.data.taskSessionId))
+  const navigable = useSessions(sessions => sessions.ids.includes(node.data.taskSessionId)
+    || Object.values(sessions.subagentsByParent).some(catalog => catalog.entries.some(entry => (
+      entry.kind === 'child' && entry.id === node.data.taskSessionId
+    ))))
   const connected = useVoice(voice => voice.sessionId === sessionId && voice.state !== 'off' && voice.state !== 'error')
   const cancellable = connected && !isTerminalTaskStatus(node.data.status)
   return (

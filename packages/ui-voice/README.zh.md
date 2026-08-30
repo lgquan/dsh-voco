@@ -6,7 +6,7 @@
 
 持久 ASR 和 TTS utterance 以带 Voice 标识的聊天消息展示。每次实时 ASR update 会替换上一版中间字幕；送入 TTS 的同一份文本会实时投影到开放的 assistant utterance，播放完成后持久化为 completed，中途打断则持久化为 interrupted。每个委派任务显示为默认折叠的紧凑状态卡，可展开摘要、取消活跃任务，并跳转到固定后台 Agent Session 查看完整过程。
 
-Voice transport 成功打开后，插件会把来源 Session 记录到浏览器本地历史索引。侧栏底部的语音历史入口列出仍存在于普通 Session 目录中的记录，标识当前通话，并可打开已保存的 Session；Host 投影与 Workspace 行无需增加 Voice 字段。Session log 仍是持久对话记录，索引只保存 Session id 和本地最近使用时间。
+Voice transport 成功打开后，插件会把来源 Session 记录到浏览器本地历史索引。侧栏底部的语音历史入口列出仍存在于普通 Session 目录中的记录，标识当前通话，并可打开已保存的 Session；侧栏中的语音父会话会主动刷新宿主 subagent catalog，并提供可折叠、缩进的子任务会话列表。点击子任务通过宿主父子地址打开，不会把 Agent child 重新提升为顶层会话。Host 投影与 Workspace 行无需增加 Voice 字段。Session log 仍是持久对话记录，索引只保存 Session id 和本地最近使用时间。
 
 ## 模型体验
 

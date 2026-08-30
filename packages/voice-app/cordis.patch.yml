@@ -28,6 +28,9 @@
         memoryRecallTimeoutMs: 250
         maxRestoredUtterances: 24
         taskSessionPolicy: continuous
+        taskSessionRotationRatio: 0.95
+        taskSessionRotationReserveTokens: 2048
+        taskSessionHandoffMaxChars: 12000
         completedAnnouncement: 任务已完成。
         failedAnnouncement: 任务失败了，请查看屏幕上的错误信息。
         cancelledAnnouncement: 任务已取消。

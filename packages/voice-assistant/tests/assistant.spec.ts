@@ -836,7 +836,6 @@ describe('voice assistant driver', () => {
     ctx.emit('agent/inbox/claimed', { agent: first.agent, message: firstMessage, turn: 1 })
     first.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     await settle()
-
     currentSelection = { provider: 'provider-b', model: 'model-b' }
     emit?.({
       type: 'task.command',
@@ -868,6 +867,95 @@ describe('voice assistant driver', () => {
 
     expect(createdAgents).toHaveLength(2)
     expect(second.followup).toHaveBeenCalledTimes(2)
+  })
+
+  it('rotates a pressured continuous child into a fresh lineage child with bounded handoff', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    class FakeTokenMeter extends Service {
+      constructor(serviceCtx: Context) { super(serviceCtx, 'tokenMeter') }
+      measure = vi.fn(() => ({ totalTokens: 960 }))
+    }
+    const createdAgents = installAgentFactory(ctx, created => {
+      created.session.append('request/context', { provider: 'test', model: 'test', contextWindow: 1_000 })
+    })
+    await ctx.plugin(FakeTokenMeter)
+    await ctx.plugin(AgentDefaultModel, { provider: 'test', model: 'test' })
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(VoiceRuntime, { provider: 'test' })
+
+    let emit: ((event: VoiceProviderEvent) => void) | undefined
+    const providerSession: VoiceProviderSession = {
+      audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
+      interactionMode: 'frontend-agent',
+      appendAudio: () => {}, commitAudio: () => {}, interruptResponse: () => {}, playbackEnded: () => {},
+      appendTaskObservation: () => {}, requestResponse: () => {}, completeTaskCommand: () => {}, close: () => Promise.resolve(),
+    }
+    ctx.voice.registerProvider({
+      id: 'test', available: () => true,
+      connect: input => { emit = input.emit; return Promise.resolve(providerSession) },
+    })
+    const source = ctx.sessions.create(SessionId('voice-rotation'))
+    const sourceAgent = {
+      id: source.id,
+      options: { provider: 'test', model: 'test' },
+      session: source,
+      inbox: {} as Agent['inbox'],
+      status: 'idle' as const,
+      ctx,
+      cancel: vi.fn(),
+      whenIdle: () => Promise.resolve(),
+      runMaintenance: () => Promise.reject(new Error('not used')),
+      send: () => {}, steer: vi.fn(), inject: () => {}, followup: vi.fn(),
+    } satisfies Agent
+    ctx.agents.register(sourceAgent)
+    await ctx.plugin({ apply, inject }, { taskSessionPolicy: 'continuous', taskSessionHandoffMaxChars: 600 })
+    await ctx.voice.open(source.id)
+
+    emit?.({ type: 'task.command', call: {
+      id: VoiceCommandCallId('rotation-first'),
+      command: { type: 'realtime_delegation', input: '先完成第一项工作' },
+    } })
+    await settle()
+    const first = createdAgents[0]
+    if (first === undefined) throw new Error('first continuous Agent was not created')
+    expect(first.session.header.parentSession).toBe(source.id)
+    expect(first.session.header.origin).toBe('subagent')
+    const firstMessage = first.followup.mock.calls[0]?.[0]
+    if (firstMessage === undefined) throw new Error('first task message missing')
+    first.session.append('turn/start', { turn: 1 })
+    ctx.emit('agent/inbox/claimed', { agent: first.agent, message: firstMessage, turn: 1 })
+    first.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await settle()
+
+    emit?.({ type: 'task.command', call: {
+      id: VoiceCommandCallId('rotation-second'),
+      command: { type: 'realtime_delegation', input: '继续完成第二项工作' },
+    } })
+    await settle()
+    expect(createdAgents).toHaveLength(2)
+    const second = createdAgents[1]
+    if (second === undefined) throw new Error('successor Agent was not created')
+    expect(second.session.events).toHaveLength(2)
+    const descriptor = second.session.events.find(event => event.type === 'subagent/descriptor')
+    expect(descriptor?.data).toMatchObject({
+      mode: 'continuable',
+      provider: 'voice-assistant',
+      agentProvider: 'test',
+      agentModel: 'test',
+    })
+    expect(second.session.header.parentSession).toBe(source.id)
+    expect(second.session.header.origin).toBe('subagent')
+    const handoff = second.inject.mock.calls[0]?.[0]
+    const handoffText = handoff?.content[0]
+    expect(handoffText?.type).toBe('text')
+    if (handoffText?.type === 'text') {
+      expect(handoffText.text).toContain('<voice_task_handoff>')
+      expect(handoffText.text.length).toBeLessThanOrEqual(600 + 80)
+    }
+    expect(ctx.tokenMeter.measure).toHaveBeenCalled()
   })
 
   it('lets a frontend voice Agent drive one exact text-Agent task', async () => {
@@ -985,6 +1073,11 @@ describe('voice assistant driver', () => {
     await settle()
     const firstTask = createdAgents[0]
     if (firstTask === undefined) throw new Error('delegated Agent was not created')
+    expect(firstTask.session.events.find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({
+      mode: 'one-shot',
+      provider: 'voice-assistant',
+      label: '检查仓库并报告结果',
+    })
     expect(sourceFollowup).not.toHaveBeenCalled()
     expect(firstTask.followup).toHaveBeenCalledTimes(1)
     expect(firstTask.followup.mock.calls[0]?.[0].source).toEqual({ kind: 'user' })

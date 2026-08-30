@@ -77,11 +77,51 @@ export function apply(ctx: ClientContext): void {
   const voiceOverlayInjected = (): VoiceOverlayInjected => ({ hooks: { voice: controller }, stopVoice })
   const voiceSessionMarkersInjected = (): VoiceSessionMarkersInjected => ({
     hooks: { voiceHistory: history.snapshot },
+    openSession: (id) => {
+      const sessions = ctx.sessions as typeof ctx.sessions & {
+        subagentAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
+        navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
+        openSubagent?: (address: { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' }) => void
+      }
+      const address = sessions.subagentAddress?.(id) ?? sessions.navigationAddress?.(id)
+      if (address !== undefined && sessions.openSubagent !== undefined) {
+        sessions.openSubagent(address)
+        return
+      }
+      ctx.sessions.open(id)
+    },
+    refreshSubagents: (parentSessionId) => {
+      const refresh = (ctx.sessions as typeof ctx.sessions & {
+        refreshSubagents?: (id: SessionId) => Promise<void>
+      }).refreshSubagents
+      if (refresh === undefined) return
+      void refresh.call(ctx.sessions, parentSessionId).catch((error: unknown) => {
+        console.warn('voice subagent catalog refresh failed:', error)
+      })
+    },
+    setSubagentCatalogOpen: (parentSessionId, open) => {
+      const setOpen = (ctx.sessions as typeof ctx.sessions & {
+        setSubagentCatalogOpen?: (id: SessionId, open: boolean) => void
+      }).setSubagentCatalogOpen
+      setOpen?.call(ctx.sessions, parentSessionId, open)
+    },
   })
   const utteranceInjected = (): VoiceUtteranceInjected => ({ hooks: { voice: controller } })
   const delegationInjected = (): VoiceDelegationInjected => ({
     hooks: { voice: controller },
-    openSession: (id) => { ctx.sessions.open(id) },
+    openSession: (id) => {
+      const sessions = ctx.sessions as typeof ctx.sessions & {
+        subagentAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
+        navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
+        openSubagent?: (address: { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' }) => void
+      }
+      const address = sessions.subagentAddress?.(id) ?? sessions.navigationAddress?.(id)
+      if (address !== undefined && sessions.openSubagent !== undefined) {
+        sessions.openSubagent(address)
+        return
+      }
+      ctx.sessions.open(id)
+    },
     cancelTask: (id) => { controller.cancelTask(id) },
   })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-voice: dictionaries')

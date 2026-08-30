@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   ChatConversationViewNode, ClientContext, ConversationEventInput, ConversationNodeDefinition,
@@ -14,6 +14,7 @@ import {
   VoiceDelegationView, type VoiceDelegationViewProps,
   VoiceUtteranceView, type VoiceUtteranceViewProps,
 } from '../src/client/VoiceNodeViews.tsx'
+import { VoiceSessionMarkers } from '../src/client/VoiceSessionMarkers.tsx'
 import { VoiceOverlay, type VoiceOverlayProps } from '../src/client/VoiceOverlay.tsx'
 import { VoiceController, type VoiceClientSnapshot } from '../src/client/voice-controller.ts'
 import {
@@ -355,6 +356,14 @@ describe('Voice UI surfaces', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消任务' }))
     expect(cancelTask).toHaveBeenCalledWith('task-1')
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '查看后台详情' }).disabled).toBe(true)
+    const nestedState = listState()
+    nestedState.subagentsByParent = {
+      [VOICE_SESSION]: { entries: [{ kind: 'child', id: TASK_SESSION }] },
+    } as typeof nestedState.subagentsByParent
+    view.rerender(<VoiceDelegationView {...absent} useSessions={selector => selector(nestedState)} />)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '查看后台详情' }).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '查看后台详情' }))
+    expect(openSession).toHaveBeenCalledWith(TASK_SESSION)
     view.rerender(<VoiceDelegationView {...absent} useSessions={selector => selector(listState([
       VOICE_SESSION, TASK_SESSION,
     ]))} />)
@@ -372,6 +381,99 @@ describe('Voice UI surfaces', () => {
       />)
       expect(screen.queryByRole('button', { name: '取消任务' })).toBeNull()
     }
+  })
+
+  it('renders expandable delegated children beneath a Voice Session row', async () => {
+    const openSession = vi.fn()
+    const refreshSubagents = vi.fn()
+    const setSubagentCatalogOpen = vi.fn()
+    const state = listState()
+    state.subagentsByParent = {
+      [VOICE_SESSION]: {
+        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '查看项目文件', activity: 'inactive', hasChildren: false }],
+        parentAvailable: true,
+        state: 'ready',
+        error: null,
+      },
+    }
+    const history = { entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] }
+    render(<>
+      <div role="tree">
+        {[<div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div>]}
+      </div>
+      <VoiceSessionMarkers
+        {...runtimeProps() as unknown as never}
+        useSessions={selector => selector(state)}
+        useVoiceHistory={selector => selector(history)}
+        openSession={openSession}
+        refreshSubagents={refreshSubagents}
+        setSubagentCatalogOpen={setSubagentCatalogOpen}
+      />
+    </>)
+    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
+    expect(refreshSubagents).toHaveBeenCalledWith(VOICE_SESSION)
+    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
+    expect(setSubagentCatalogOpen).toHaveBeenCalledWith(VOICE_SESSION, true)
+    const child = document.querySelector<HTMLElement>('[data-voice-subagent-child]')
+    expect(child?.textContent).toBe('查看项目文件')
+    fireEvent.click(child!)
+    expect(openSession).toHaveBeenCalledWith(TASK_SESSION)
+  })
+
+  it('keeps the disclosure control visible while the child catalog is still absent', async () => {
+    const refreshSubagents = vi.fn()
+    const setSubagentCatalogOpen = vi.fn()
+    const state = listState()
+    const history = { entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] }
+    render(<>
+      <div role="tree">
+        <div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div>
+      </div>
+      <VoiceSessionMarkers
+        {...runtimeProps() as unknown as never}
+        useSessions={selector => selector(state)}
+        useVoiceHistory={selector => selector(history)}
+        openSession={vi.fn()}
+        refreshSubagents={refreshSubagents}
+        setSubagentCatalogOpen={setSubagentCatalogOpen}
+      />
+    </>)
+    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
+    expect(refreshSubagents).toHaveBeenCalledWith(VOICE_SESSION)
+    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
+    expect(setSubagentCatalogOpen).toHaveBeenCalledWith(VOICE_SESSION, true)
+  })
+
+  it('keeps unavailable catalog rows visible without navigating them', async () => {
+    const openSession = vi.fn()
+    const state = listState()
+    state.subagentsByParent = {
+      [VOICE_SESSION]: {
+        entries: [{ kind: 'broken', id: TASK_SESSION, mode: 'one-shot', label: '会话记录损坏', hasChildren: false }],
+        parentAvailable: true,
+        state: 'ready',
+        error: null,
+      },
+    } as typeof state.subagentsByParent
+    const history = { entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] }
+    render(<>
+      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
+      <VoiceSessionMarkers
+        {...runtimeProps() as unknown as never}
+        useSessions={selector => selector(state)}
+        useVoiceHistory={selector => selector(history)}
+        openSession={openSession}
+        refreshSubagents={vi.fn()}
+        setSubagentCatalogOpen={vi.fn()}
+      />
+    </>)
+    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
+    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
+    const child = document.querySelector<HTMLButtonElement>('[data-voice-subagent-child]')
+    expect(child?.textContent).toBe('会话记录损坏')
+    expect(child?.disabled).toBe(true)
+    fireEvent.click(child!)
+    expect(openSession).not.toHaveBeenCalled()
   })
 
   it('attaches Voice Mode to the current Session and controls the active transport', () => {
@@ -486,6 +588,10 @@ describe('Voice UI assembly', () => {
     const unregisterLocale = vi.fn()
     const registerLocale = vi.fn().mockReturnValue(unregisterLocale)
     const open = vi.fn()
+    const openSubagent = vi.fn()
+    const subagentAddress = vi.fn((id: SessionId) => id === TASK_SESSION
+      ? { parentSessionId: VOICE_SESSION, childSessionId: TASK_SESSION, mode: 'continuable' as const }
+      : undefined)
     const connectWorkspace = vi.fn().mockResolvedValue(FRESH_VOICE_SESSION)
     const start = vi.spyOn(VoiceController.prototype, 'start').mockResolvedValue(undefined)
     const stop = vi.spyOn(VoiceController.prototype, 'stop').mockResolvedValue(undefined)
@@ -496,7 +602,7 @@ describe('Voice UI assembly', () => {
       setDraft: vi.fn(), submit: vi.fn(), notify: vi.fn(),
     }
     const ctx = {
-      sessions: { open, scope: () => ({}), list: { getSnapshot: () => listState() } },
+      sessions: { open, openSubagent, subagentAddress, scope: () => ({}), list: { getSnapshot: () => listState() } },
       conversation: { input: { for: () => input } },
       workspaces: { list: { getSnapshot: () => workspaceState() }, connectWorkspace },
       locale: { register: registerLocale },
@@ -549,7 +655,11 @@ describe('Voice UI assembly', () => {
     expect(utterance.hooks.voice).toBeInstanceOf(VoiceController)
     const delegation = (registrations[4]!.options.inject as () => { openSession(id: SessionId): void })()
     delegation.openSession(TASK_SESSION)
-    expect(open).toHaveBeenLastCalledWith(TASK_SESSION)
+    expect(openSubagent).toHaveBeenLastCalledWith({
+      parentSessionId: VOICE_SESSION,
+      childSessionId: TASK_SESSION,
+      mode: 'continuable',
+    })
 
     const disposeLocale = effects[0]!() as () => void
     expect(registerLocale).toHaveBeenCalledWith(NS, { zh, en })
