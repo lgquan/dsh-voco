@@ -69,7 +69,7 @@ voice 能力层 ---- voice-local ---- SiliconFlow ASR / Edge TTS
 - `shell.overlay`：活动语音状态/控制，以及侧栏语音父会话标识和可折叠子会话装饰器。
 - `conversation.chat.node`：语音 utterance 和委派任务卡片。
 
-当前 DSH workspace package 没有提供单条侧栏会话行的扩展 slot，且当前版本将 `origin: 'subagent'` 子会话从顶层列表过滤掉。因此 `VoiceSessionMarkers` 观察 Host 所有的会话行，并通过 React 行 key 精确找到语音父会话，在已有状态区域绘制 Voice 标识和展开按钮；展开后在父行下方绘制缩进的 child rows，点击仍委托给宿主父子地址导航。它不负责普通会话的打开、重命名、归档或排序。
+当前 DSH workspace package 没有提供单条侧栏会话行的扩展 slot，且当前版本将 `origin: 'subagent'` 子会话从顶层列表过滤掉。因此 `VoiceSessionMarkers` 观察 Host 所有的会话行，并通过 React 行 key 精确找到语音父会话，在已有状态区域绘制 Voice 标识和展开按钮；展开后在父行下方绘制缩进的 child rows。child 行保留宿主父子地址导航，并提供转发到 runtime/registry 的重命名、分叉、归档、删除菜单，同时阻断宿主 HoverCard 事件。它不接管普通会话的打开、菜单或排序。
 
 ## 持久化与恢复
 

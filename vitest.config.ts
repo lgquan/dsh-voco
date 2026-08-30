@@ -13,4 +13,7 @@ export default defineConfig({
       '@flowingspring/dsh-client-ui-voice': fromRoot('./packages/ui-voice/src/index.ts'),
     },
   },
+  ssr: {
+    noExternal: ['@deepseek-ai/dsh-client-ui-primitives'],
+  },
 })

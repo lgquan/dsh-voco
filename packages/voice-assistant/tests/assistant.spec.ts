@@ -505,15 +505,20 @@ describe('voice assistant driver', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
+    const createdAgents = installAgentFactory(ctx)
     await ctx.plugin(AgentDefaultModel, { provider: 'test', model: 'test' })
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
-    const title = { value: undefined as string | undefined, rename: vi.fn((_: unknown, value: string) => { title.value = value }) }
+    const titles = new Map<unknown, string>()
+    const renameTitle = vi.fn((session: unknown, value: string) => { titles.set(session, value) })
     class FakeSessionTitle extends Service {
       constructor(serviceCtx: Context) { super(serviceCtx, 'sessionTitle') }
-      get = vi.fn(() => title.value === undefined ? undefined : { title: title.value })
-      rename = title.rename
+      get = vi.fn((session: unknown) => {
+        const title = titles.get(session)
+        return title === undefined ? undefined : { title }
+      })
+      rename = renameTitle
     }
     await ctx.plugin(FakeSessionTitle)
     class TitleAdapter extends LlmAdapter {
@@ -531,7 +536,7 @@ describe('voice assistant driver', () => {
     let emit: ((event: VoiceProviderEvent) => void) | undefined
     const providerSession: VoiceProviderSession = {
       audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
-      interactionMode: 'speech-shell',
+      interactionMode: 'frontend-agent',
       appendAudio: () => {}, commitAudio: () => {}, interruptResponse: () => {}, playbackEnded: () => {},
       appendTaskObservation: () => {}, requestResponse: () => {}, completeTaskCommand: () => {},
       close: () => Promise.resolve(),
@@ -560,13 +565,26 @@ describe('voice assistant driver', () => {
 
     emit?.({ type: 'transcription.completed', utteranceId: VoiceUtteranceId('title-greeting'), text: '你好' })
     await settle()
-    expect(title.rename).not.toHaveBeenCalled()
+    expect(renameTitle).not.toHaveBeenCalled()
     emit?.({ type: 'transcription.completed', utteranceId: VoiceUtteranceId('title-request'), text: '帮我检查项目依赖' })
-    await vi.waitFor(() => { expect(title.rename).toHaveBeenCalledTimes(1) })
-    expect(title.value).toBe('检查项目依赖')
+    await vi.waitFor(() => { expect(renameTitle).toHaveBeenCalledTimes(1) })
+    expect(titles.get(source)).toBe('检查项目依赖')
     emit?.({ type: 'transcription.completed', utteranceId: VoiceUtteranceId('title-later'), text: '再看看测试' })
     await settle()
-    expect(title.rename).toHaveBeenCalledTimes(1)
+    expect(renameTitle).toHaveBeenCalledTimes(1)
+
+    const delegatedRequest = '请帮我全面检查这个项目中的所有依赖版本并报告需要升级的内容'
+    emit?.({ type: 'task.command', call: {
+      id: VoiceCommandCallId('title-child'),
+      command: { type: 'realtime_delegation', input: delegatedRequest },
+    } })
+    await vi.waitFor(() => { expect(createdAgents).toHaveLength(1) })
+    const child = createdAgents[0]!
+    expect(child.session.events.find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({
+      label: '检查项目依赖',
+    })
+    expect(titles.get(child.session)).toBe('检查项目依赖')
+    expect(child.followup.mock.calls[0]?.[0].content).toEqual([{ type: 'text', text: delegatedRequest }])
   })
 
   it('rewrites a detail-only Agent result against the original request and streams identical UI and TTS text', async () => {

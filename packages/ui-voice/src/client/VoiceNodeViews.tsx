@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { VoiceClientSnapshot } from './voice-controller.ts'
 import type { VoiceDelegationChatData } from './voice-definitions.ts'
 import type { VoiceKey } from './locales.ts'
+import { isSessionEffectivelyArchived } from './session-archive.ts'
 import css from './VoiceNodeViews.module.css'
 
 /** Live transcript source injected into the Voice utterance renderer. */
@@ -20,6 +21,7 @@ export interface VoiceDelegationInjected {
   }
   readonly openSession: (id: SessionId) => void
   readonly cancelTask: (id: string) => void
+  readonly recordTaskActivity?: (id: SessionId, at: number) => void
 }
 
 export type VoiceUtteranceViewProps =
@@ -70,12 +72,22 @@ const STATUS_KEYS: Record<VoiceDelegationChatData['status'], VoiceKey> = {
 }
 
 /** Render the task link from a Voice Session to its bound background Agent Session. */
-export function VoiceDelegationView({ node, sessionId, useSessions, useVoice, openSession, cancelTask, t }: VoiceDelegationViewProps) {
+export function VoiceDelegationView({ node, sessionId, useSessions, useWorkspaces, useVoice, openSession, cancelTask, recordTaskActivity, t }: VoiceDelegationViewProps) {
   const [expanded, setExpanded] = useState(false)
-  const navigable = useSessions(sessions => sessions.ids.includes(node.data.taskSessionId)
+  useEffect(() => {
+    const at = node.data.lastActivityAt
+    if (recordTaskActivity !== undefined && at !== undefined) recordTaskActivity(node.data.taskSessionId, at)
+  }, [node.data.lastActivityAt, node.data.taskSessionId, recordTaskActivity])
+  const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const navigable = useSessions(sessions => !isSessionEffectivelyArchived(
+    node.data.taskSessionId,
+    archivedSessionIds,
+    sessions.byId,
+    id => id === node.data.taskSessionId ? sessionId : undefined,
+  ) && (sessions.ids.includes(node.data.taskSessionId)
     || Object.values(sessions.subagentsByParent).some(catalog => catalog.entries.some(entry => (
       entry.kind === 'child' && entry.id === node.data.taskSessionId
-    ))))
+    )))))
   const connected = useVoice(voice => voice.sessionId === sessionId && voice.state !== 'off' && voice.state !== 'error')
   const cancellable = connected && !isTerminalTaskStatus(node.data.status)
   return (

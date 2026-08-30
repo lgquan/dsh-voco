@@ -706,12 +706,7 @@ function isMeaningfulVoiceTitleInput(value: string): boolean {
   return !/^(?:你好|您好|嗨|哈喽|喂|在吗|有人吗|测试|谢谢|好的)[，。！？!?、]*$/u.test(normalized)
 }
 
-async function generateVoiceSessionTitle(
-  ctx: Context,
-  session: unknown,
-  input: string,
-  titleService: SessionTitleLike,
-): Promise<void> {
+async function generateVoiceTitleCandidate(ctx: Context, input: string): Promise<string> {
   let candidate = ''
   try {
     const llm = ctx.get('llm') as LlmRuntime | undefined
@@ -737,14 +732,33 @@ async function generateVoiceSessionTitle(
     ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
   }
   if (candidate === '') candidate = voiceTitleCandidate(input)
-  if (candidate === '' || titleService.get(session) !== undefined) return
+  return candidate
+}
+
+function pinVoiceSessionTitle(
+  ctx: Context,
+  session: unknown,
+  candidate: string,
+  titleService: SessionTitleLike,
+): void {
+  if (candidate === '') return
   try {
+    if (titleService.get(session) !== undefined) return
     // Use the public title API once so the generated title is pinned against
     // later automatic revisions while still allowing an explicit user rename.
     titleService.rename(session, candidate)
   } catch (error: unknown) {
     ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
   }
+}
+
+async function generateVoiceSessionTitle(
+  ctx: Context,
+  session: unknown,
+  input: string,
+  titleService: SessionTitleLike,
+): Promise<void> {
+  pinVoiceSessionTitle(ctx, session, await generateVoiceTitleCandidate(ctx, input), titleService)
 }
 
 /** Install the driver. @param ctx - composed Agent and voice context. @param config - driver copy and queue bounds. */
@@ -1145,7 +1159,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     readonly agent: Agent
     readonly disposeVoiceMessage: () => void
   }> => {
+    const titleService = optionalSessionTitle(ctx)
+    const titleInput = label.trim() === '' ? '语音委派任务' : label.trim()
     const sourceAgent = await ensureAgent(binding)
+    const generatedLabelPromise = titleService === undefined
+      ? Promise.resolve(voiceTitleCandidate(titleInput))
+      : generateVoiceTitleCandidate(ctx, titleInput)
     const sourceSession = ctx.sessions.get(binding.sessionId)
     if (sourceSession === undefined) {
       throw new Error(`voice-assistant: source session "${binding.sessionId}" is not live`)
@@ -1153,7 +1172,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const presetId = resolveSessionPreset(sourceSession)
     const presets = ctx.get('agentPresets')
     let disposeVoiceMessage: (() => void) | undefined
-    const handle = await ctx.agents.create({
+    const [handle, generatedLabel] = await Promise.all([ctx.agents.create({
       sessionId: taskSessionId,
       meta: {
         ...(sourceSession.header.cwd === undefined ? {} : { cwd: sourceSession.header.cwd }),
@@ -1174,12 +1193,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           () => binding.active?.id,
         )
       },
-    })
+    }), generatedLabelPromise])
     // The host subagent catalog classifies children from this durable
     // descriptor, not from SessionHeader.parentSession alone. Append it before
     // the first user message so the child is enumerable immediately.
     const mode = (config.taskSessionPolicy ?? 'isolated') === 'continuous' ? 'continuable' : 'one-shot'
-    const normalizedLabel = label.trim() === '' ? '语音委派任务' : label.trim().slice(0, 160)
+    const normalizedLabel = generatedLabel === '' ? '语音委派任务' : generatedLabel
     const descriptor = mode === 'continuable'
       ? snapshotSubagentDescriptor({
           mode,
@@ -1194,6 +1213,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           label: normalizedLabel,
         })
     const childSession = handle.agent.session
+    if (titleService !== undefined) pinVoiceSessionTitle(ctx, childSession, normalizedLabel, titleService)
     const appendDescriptor = childSession.append as unknown as (type: string, data: unknown) => void
     appendDescriptor.call(childSession, SUBAGENT_DESCRIPTOR_EVENT_TYPE, descriptor)
     handles.set(taskSessionId, handle)
@@ -1705,7 +1725,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         let created: Awaited<ReturnType<typeof createTaskAgent>> & { readonly taskSessionId: SessionId }
         try {
           if (continuous) {
-            created = await ensureContinuousTaskAgent(binding, call.command.input)
+            created = await ensureContinuousTaskAgent(binding, requestText)
           } else {
             const taskSessionId = SessionId(`session-${randomUUID()}`)
             const { selection } = taskModelSelection(binding)

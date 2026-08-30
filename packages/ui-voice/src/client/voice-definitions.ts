@@ -20,6 +20,8 @@ export interface VoiceDelegationChatData {
   readonly input: string
   readonly status: TaskObservation['status']
   readonly update?: string
+  /** Latest source event time for this delegated task (epoch ms). */
+  readonly lastActivityAt?: number
 }
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
@@ -107,6 +109,7 @@ export const voiceDelegationDefinition: ConversationNodeDefinition<VoiceDelegati
       taskSessionId: match.event.data.taskSessionId,
       input: match.event.data.input,
       status: 'accepted',
+      lastActivityAt: match.event.time,
     }
   },
   update: (context, match) => {
@@ -119,6 +122,7 @@ export const voiceDelegationDefinition: ConversationNodeDefinition<VoiceDelegati
     return {
       ...context.state,
       status: observation.status,
+      lastActivityAt: Math.max(context.state.lastActivityAt ?? 0, match.event.time),
       ...(update === undefined ? {} : { update }),
     }
   },

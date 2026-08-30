@@ -1,5 +1,5 @@
 /** Browser voice UI assembly. @module @flowingspring/dsh-client-ui-voice/client */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -15,6 +15,7 @@ import { VoiceHistoryStore } from './voice-history.ts'
 import { VoiceTextSubmitBridge, type VoiceTextInput } from './voice-text-submit.ts'
 import { voiceDelegationDefinition, voiceUtteranceDefinition } from './voice-definitions.ts'
 import { en, NS, type VoiceKey, zh } from './locales.ts'
+import { isSessionEffectivelyArchived } from './session-archive.ts'
 
 export type { VoiceKey } from './locales.ts'
 
@@ -25,7 +26,34 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-export const inject = ['conversation', 'conversationEvents', 'slots', 'sessions', 'locale']
+export const inject = ['conversation', 'conversationEvents', 'slots', 'sessions', 'workspaces', 'locale', 'remote']
+
+/** Public archive-manager RPC surface. Kept structural so the voice package
+ * remains optional and does not take a hard dependency on the community plugin. */
+interface ArchiveManagerWorkspaceRegistry {
+  deleteSession?: (sessionId: SessionId) => Promise<{
+    readonly ok: boolean
+    readonly error?: { readonly message?: string }
+  }>
+}
+
+function archiveManagerRegistry(ctx: ClientContext): ArchiveManagerWorkspaceRegistry | undefined {
+  try {
+    const registry = ctx.get('remote.workspaceRegistry') as unknown
+    if (registry === null || typeof registry !== 'object') return undefined
+    return registry as ArchiveManagerWorkspaceRegistry
+  } catch {
+    return undefined
+  }
+}
+
+/** Call archive-manager's complete deletion path when its remote is installed. */
+async function deleteWithArchiveManager(ctx: ClientContext, sessionId: SessionId): Promise<void> {
+  const deleteSession = archiveManagerRegistry(ctx)?.deleteSession
+  if (typeof deleteSession !== 'function') throw new Error('archive-manager 删除服务不可用')
+  const result = await deleteSession(sessionId)
+  if (!result.ok) throw new Error(result.error?.message ?? 'archive-manager 删除会话失败')
+}
 
 /** Refresh the Host-backed Session list when the runtime exposes its baseline pull. */
 function refreshSessions(ctx: ClientContext): void {
@@ -77,7 +105,36 @@ export function apply(ctx: ClientContext): void {
   const voiceOverlayInjected = (): VoiceOverlayInjected => ({ hooks: { voice: controller }, stopVoice })
   const voiceSessionMarkersInjected = (): VoiceSessionMarkersInjected => ({
     hooks: { voiceHistory: history.snapshot },
+    childActions: {
+      rename: async (id, title) => {
+        const session = ensureChildSession(ctx, id)
+        if (session === undefined) throw new Error(`unknown session "${id}"`)
+        const result = await session.rename(title)
+        if (!result.ok) throw new Error(result.error.message)
+      },
+      fork: async (id) => {
+        ensureChildSession(ctx, id)
+        const childId = await ctx.sessions.fork({ sessionId: id, increaseTitle: true })
+        ctx.sessions.open(childId)
+      },
+      ...(archiveManagerRegistry(ctx)?.deleteSession === undefined ? {} : {
+        delete: async (id: SessionId) => {
+          const parentId = (ctx.sessions as typeof ctx.sessions & {
+            navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId } | undefined
+          }).navigationAddress?.(id)?.parentSessionId
+          await deleteWithArchiveManager(ctx, id)
+          refreshSessions(ctx)
+          if (parentId !== undefined) {
+            const refreshSubagents = (ctx.sessions as typeof ctx.sessions & {
+              refreshSubagents?: (sessionId: SessionId) => Promise<void>
+            }).refreshSubagents
+            await refreshSubagents?.call(ctx.sessions, parentId)
+          }
+        },
+      }),
+    },
     openSession: (id) => {
+      if (isEffectivelyArchivedInContext(ctx, id)) return
       const sessions = ctx.sessions as typeof ctx.sessions & {
         subagentAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
         navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
@@ -109,7 +166,9 @@ export function apply(ctx: ClientContext): void {
   const utteranceInjected = (): VoiceUtteranceInjected => ({ hooks: { voice: controller } })
   const delegationInjected = (): VoiceDelegationInjected => ({
     hooks: { voice: controller },
+    recordTaskActivity: (id, at) => { history.recordTaskActivity(id, at) },
     openSession: (id) => {
+      if (isEffectivelyArchivedInContext(ctx, id)) return
       const sessions = ctx.sessions as typeof ctx.sessions & {
         subagentAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
         navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
@@ -163,4 +222,33 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: delegationInjected,
   }, VoiceDelegationView))
+}
+
+/** Archive-manager archives one requested ID; Voice treats that state as
+ * inherited by every descendant without mutating the third-party archive set. */
+function isEffectivelyArchivedInContext(ctx: ClientContext, sessionId: SessionId): boolean {
+  const workspaces = (ctx as ClientContext & {
+    workspaces?: { list: { getSnapshot(): { readonly archivedSessionIds: readonly SessionId[] } } }
+  }).workspaces
+  if (workspaces === undefined) return false
+  const snapshot = ctx.sessions.list.getSnapshot()
+  const sessions = ctx.sessions as typeof ctx.sessions & {
+    navigationAddress?: (id: SessionId) => { readonly parentSessionId: SessionId } | undefined
+  }
+  return isSessionEffectivelyArchived(
+    sessionId,
+    workspaces.list.getSnapshot().archivedSessionIds,
+    snapshot.byId,
+    id => sessions.navigationAddress?.(id)?.parentSessionId,
+  )
+}
+
+function ensureChildSession(ctx: ClientContext, id: SessionId): SessionFace | undefined {
+  const sessions = ctx.sessions as typeof ctx.sessions & {
+    navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
+    openSubagent?: (address: { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' }) => void
+  }
+  const address = sessions.navigationAddress?.(id)
+  if (address !== undefined) sessions.openSubagent?.(address)
+  return ctx.sessions.binding(id)?.session
 }
