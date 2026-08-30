@@ -878,8 +878,29 @@ describe('Voice UI assembly', () => {
       state: { getSnapshot: () => ({ draft: '', imageIds: [] }) },
       setDraft: vi.fn(), submit: vi.fn(), notify: vi.fn(),
     }
+    const credentialApi = {
+      describe: vi.fn().mockResolvedValue({
+        result: { ok: true, value: { credentials: { SILICONFLOW_API_KEY: { configured: false, writable: true } } } },
+      }),
+      set: vi.fn(),
+    }
+    const settingsScope = {
+      getSnapshot: () => ({
+        status: 'ready', value: {}, base: {}, user: undefined, revision: 0, writable: true, mode: 'host',
+      }),
+      subscribe: () => () => undefined,
+      set: vi.fn(),
+      unset: vi.fn(),
+    }
+    const disposeCredentialListener = vi.fn()
     const ctx = {
-      get: (key: string) => key === 'remote.workspaceRegistry' ? { deleteSession } : undefined,
+      get: (key: string) => key === 'remote.workspaceRegistry'
+        ? { deleteSession }
+        : key === 'connection'
+          ? { api: { credentials: credentialApi } }
+          : undefined,
+      settingsScope: { bind: () => settingsScope },
+      remote: { $on: vi.fn().mockReturnValue(disposeCredentialListener) },
       sessions: {
         open, openSubagent, subagentAddress, navigationAddress: subagentAddress, refreshSubagents,
         scope: () => ({}), list: { getSnapshot: () => listState() },
@@ -898,7 +919,10 @@ describe('Voice UI assembly', () => {
       },
     } as unknown as ClientContext
 
-    expect(inject).toEqual(['conversation', 'conversationEvents', 'slots', 'sessions', 'workspaces', 'locale', 'remote'])
+    expect(inject).toEqual([
+      'conversation', 'conversationEvents', 'slots', 'sessions', 'workspaces', 'locale', 'remote',
+      'connection', 'settingsScope',
+    ])
     apply(ctx)
     expect(definitions).toEqual([voiceUtteranceDefinition, voiceDelegationDefinition])
     expect(registrations.map(entry => [entry.options.name, entry.options.id ?? entry.options.key])).toEqual([
@@ -907,6 +931,7 @@ describe('Voice UI assembly', () => {
       ['shell.overlay', 'voice-session-markers'],
       ['conversation.chat.node', 'voice-utterance'],
       ['conversation.chat.node', 'voice-delegation'],
+      ['settings.plugin.item', 'voice-local'],
     ])
     expect(registrations.every(entry => entry.options.locale === NS)).toBe(true)
 
@@ -959,14 +984,17 @@ describe('Voice UI assembly', () => {
     expect(registerLocale).toHaveBeenCalledWith(NS, { zh, en })
     disposeLocale()
     expect(unregisterLocale).toHaveBeenCalledTimes(1)
-    const dispose = effects[1]!() as () => Promise<void>
+    const disposeCredential = effects[1]!() as () => void
+    disposeCredential()
+    expect(disposeCredentialListener).toHaveBeenCalledTimes(1)
+    const dispose = effects[2]!() as () => Promise<void>
     await dispose()
     expect(stop.mock.calls.length).toBeGreaterThanOrEqual(2)
-    const disposeTextSubmit = effects[2]!() as () => void
+    const disposeTextSubmit = effects[3]!() as () => void
     disposeTextSubmit()
-    const disposeHistory = effects[3]!() as () => void
+    const disposeHistory = effects[4]!() as () => void
     disposeHistory()
-    const disposeModelSelectionCompatibility = effects[4]!() as () => void
+    const disposeModelSelectionCompatibility = effects[5]!() as () => void
     expect((ctx.sessions as unknown as { subagentAddress: (id: SessionId) => unknown }).subagentAddress(TASK_SESSION)).toBeUndefined()
     disposeModelSelectionCompatibility()
     expect((ctx.sessions as unknown as { subagentAddress: (id: SessionId) => unknown }).subagentAddress(TASK_SESSION)).toEqual({
@@ -988,7 +1016,27 @@ describe('Voice UI assembly', () => {
       state: { getSnapshot: () => ({ draft: '', imageIds: [] }) },
       setDraft: vi.fn(), submit: vi.fn(), notify: vi.fn(),
     }
+    const settingsScope = {
+      getSnapshot: () => ({
+        status: 'ready', value: {}, base: {}, user: undefined, revision: 0, writable: true, mode: 'host',
+      }),
+      subscribe: () => () => undefined,
+      set: vi.fn(),
+      unset: vi.fn(),
+    }
     const ctx = {
+      get: (key: string) => key === 'connection' ? {
+        api: {
+          credentials: {
+            describe: vi.fn().mockResolvedValue({
+              result: { ok: true, value: { credentials: {} } },
+            }),
+            set: vi.fn(),
+          },
+        },
+      } : undefined,
+      settingsScope: { bind: () => settingsScope },
+      remote: { $on: () => () => undefined },
       sessions: { open, scope: () => ({}), list: { getSnapshot: () => sessionSnapshot } },
       conversation: { input: { for: () => input } },
       workspaces: {

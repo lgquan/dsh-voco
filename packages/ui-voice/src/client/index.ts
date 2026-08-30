@@ -1,8 +1,11 @@
 /** Browser voice UI assembly. @module @flowingspring/dsh-client-ui-voice/client */
 import type { ClientContext, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { VoiceControl, type VoiceControlInjected } from './VoiceControl.tsx'
 import {
   VoiceDelegationView, type VoiceDelegationInjected,
@@ -10,12 +13,14 @@ import {
 } from './VoiceNodeViews.tsx'
 import { VoiceOverlay, type VoiceOverlayInjected } from './VoiceOverlay.tsx'
 import { VoiceSessionMarkers, type VoiceSessionMarkersInjected } from './VoiceSessionMarkers.tsx'
+import { VocoSettingsCard } from './VocoSettingsCard.tsx'
 import { VoiceController } from './voice-controller.ts'
 import { VoiceHistoryStore } from './voice-history.ts'
 import { VoiceTextSubmitBridge, type VoiceTextInput } from './voice-text-submit.ts'
 import { voiceDelegationDefinition, voiceUtteranceDefinition } from './voice-definitions.ts'
 import { en, NS, type VoiceKey, zh } from './locales.ts'
 import { isSessionEffectivelyArchived } from './session-archive.ts'
+import { VOCO_SETTINGS_NAMESPACE, VocoSettingsController } from './voco-settings-controller.ts'
 
 export type { VoiceKey } from './locales.ts'
 
@@ -26,7 +31,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-export const inject = ['conversation', 'conversationEvents', 'slots', 'sessions', 'workspaces', 'locale', 'remote']
+export const inject = [
+  'conversation', 'conversationEvents', 'slots', 'sessions', 'workspaces', 'locale', 'remote',
+  'connection', 'settingsScope',
+]
 
 type SessionAddress = {
   readonly parentSessionId: SessionId
@@ -94,6 +102,10 @@ function refreshSessions(ctx: ClientContext): void {
 
 /** Mount root transport controls and durable Voice conversation renderers. @param ctx - browser context. */
 export function apply(ctx: ClientContext): void {
+  const vocoSettings = new VocoSettingsController(
+    ctx.settingsScope.bind({ namespace: VOCO_SETTINGS_NAMESPACE }),
+    ctx.get('connection').api,
+  )
   const controller = new VoiceController({
     onConversationStarted: () => {
       // Voice events are appended by the Host, while the browser's session
@@ -209,6 +221,9 @@ export function apply(ctx: ClientContext): void {
     cancelTask: (id) => { controller.cancelTask(id) },
   })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-voice: dictionaries')
+  ctx.effect(() => ctx.remote.$on('credentials/reference-updated', ref => {
+    vocoSettings.refreshCredential(ref)
+  }), 'ui-voice: credential invalidations')
   ctx.effect(() => async () => { await controller.stop() }, 'ui-voice: transport teardown')
   ctx.effect(() => () => { textSubmit.dispose() }, 'ui-voice: text submit bridge teardown')
   ctx.effect(() => () => { history.dispose() }, 'ui-voice: history persistence teardown')
@@ -248,6 +263,12 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: delegationInjected,
   }, VoiceDelegationView))
+  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+    name: 'settings.plugin.item',
+    key: VOCO_SETTINGS_NAMESPACE,
+    locale: NS,
+    inject: () => vocoSettings.inject(),
+  }, VocoSettingsCard))
 }
 
 /** Archive-manager archives one requested ID; Voice treats that state as

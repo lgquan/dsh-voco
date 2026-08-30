@@ -40,10 +40,10 @@ Open the local URL printed by DSH, click the microphone in a session, and allow 
 GitHub Releases provide the same prebuilt plugin package as npm. No source checkout or pnpm development environment is required:
 
 ```powershell
-dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.5/flowingspring-dsh-voco-0.3.5.tgz
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.6/flowingspring-dsh-voco-0.3.6.tgz
 ```
 
-Release page: [v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
+Release page: [v0.3.6](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.6)
 
 Whichever installation method you choose, start the Web UI through DSH:
 
@@ -54,6 +54,12 @@ dsh web
 ## Configure the SiliconFlow API key
 
 The only required secret is `SILICONFLOW_API_KEY`. Get your own key from the [SiliconFlow console](https://siliconflow.cn/). Speech-to-text uses SiliconFlow's currently free [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) model; current availability and pricing are governed by the model page. Never put a real key in source code, commit it to GitHub, or share it with other users.
+
+### Recommended: DSH settings
+
+After starting DSH, open **Settings → Plugins → Plugin configuration**, expand **Voice Assistant (Voco)**, enter the API key, and save. The key is written to the DSH credentials store rather than the regular settings file, and the UI never reads the secret back. Start or reconnect Voice after saving.
+
+Environment variables and `.env` remain supported for automation and existing deployments.
 
 ### Temporary: current PowerShell session
 
@@ -74,9 +80,9 @@ Create `.env` in the DSH user directory. On Windows the default path is `%USERPR
 SILICONFLOW_API_KEY=sk-your-api-key
 ```
 
-You may also create `.env` in the directory from which you run `dsh web`. DSH reads these environment layers at startup, and the plugin then reads `process.env.SILICONFLOW_API_KEY`. Do not enter the npm installation directory or edit files under `node_modules`.
+You may also create `.env` in the directory from which you run `dsh web`. The DSH credentials service reads these environment layers, and the plugin resolves `SILICONFLOW_API_KEY` through that service for each new voice connection. Do not enter the npm installation directory or edit files under `node_modules`.
 
-An already inherited environment variable takes precedence over values from `.env`. Restart `dsh web` after changing `.env`, because the environment is loaded once per process.
+An already inherited environment variable takes precedence, followed by the DSH credentials store and then `.env` fallbacks. Restart `dsh web` after changing `.env`, because the environment is loaded once per process.
 
 ## After installation
 
@@ -103,6 +109,8 @@ You can also install a specific GitHub Release `.tgz` URL. Restart `dsh web` aft
 ```powershell
 dsh plugin --profile web remove @flowingspring/dsh-voco
 ```
+
+Uninstalling the plugin does not remove a saved API key. To remove it completely, delete `SILICONFLOW_API_KEY` from `refs` in `%USERPROFILE%\.dsh\.credentials.yaml` (or `$DSH_HOME/.credentials.yaml` when configured), and remove the same name from the process environment or any `.env` file.
 
 Uninstalling the plugin does not delete existing DSH sessions or Voice history. Confirm the relevant data directory before removing any stored data manually.
 

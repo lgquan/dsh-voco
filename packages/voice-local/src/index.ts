@@ -4,6 +4,8 @@ import { dirname, resolve } from 'node:path'
 import { loadEnvFile } from 'node:process'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import type { VoiceProvider } from '@flowingspring/dsh-voice'
 import { DEFAULT_EDGE_TTS_RATE } from './edge-tts.ts'
@@ -12,6 +14,8 @@ import { NodeSpeechBackend } from './node-backend.ts'
 
 export const name = 'voice-local'
 export const inject = ['voice']
+export const VOICE_LOCAL_SETTINGS_NAMESPACE = settingsNamespace('voice-local')
+export const SILICONFLOW_API_KEY_REF = credentialRef('SILICONFLOW_API_KEY')
 
 export interface Config {
   readonly apiKey?: string
@@ -31,7 +35,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  apiKey: z.string(),
+  apiKey: z.string().role('secret'),
   endpoint: z.string().default('https://api.siliconflow.cn/v1/audio/transcriptions'),
   model: z.string().default('XingChenAGI/XingChenASR-V3.2-Ultra'),
   interactionMode: z.union(['speech-shell', 'frontend-agent']).default('speech-shell'),
@@ -69,27 +73,36 @@ function loadProjectEnv(): void {
 }
 
 export function apply(ctx: Context, config: Config = {}): () => void {
-  loadProjectEnv()
+  // The official provider owns env layering. Promoting a .env value into
+  // process.env here would make the credentials UI correctly treat it as a
+  // read-only inherited value and disable its input.
+  if (ctx.get('credentials') === undefined) loadProjectEnv()
+  let current = (): Config => config
+  installSettingsSection(ctx, VOICE_LOCAL_SETTINGS_NAMESPACE, Config, config, {
+    setSource: source => { current = source },
+    onChange: () => {},
+  })
   const provider: VoiceProvider = {
     id: 'local',
     available: () => true,
     connect: async ({ voiceSessionId, emit }) => {
+      const active = current()
       const backend = new NodeSpeechBackend({
-        apiKey: config.apiKey ?? process.env.SILICONFLOW_API_KEY ?? '',
-        endpoint: config.endpoint ?? 'https://api.siliconflow.cn/v1/audio/transcriptions',
-        model: config.model ?? 'XingChenAGI/XingChenASR-V3.2-Ultra',
-        requestTimeoutMs: config.requestTimeoutMs ?? 60_000,
-        inputSampleRate: config.inputSampleRate ?? 16_000,
-        outputSampleRate: config.outputSampleRate ?? 48_000,
-        ttsRate: config.ttsRate ?? DEFAULT_EDGE_TTS_RATE,
-        silenceDurationMs: config.silenceDurationMs ?? 1_500,
-        speechThreshold: config.speechThreshold ?? 0.015,
-        minSpeechDurationMs: config.minSpeechDurationMs ?? 250,
-        preRollMs: config.preRollMs ?? 400,
-        trailingSilenceMs: config.trailingSilenceMs ?? 200,
-        maxUtteranceMs: config.maxUtteranceMs ?? 60_000,
+        apiKey: await resolveSiliconFlowApiKey(ctx, active),
+        endpoint: active.endpoint ?? 'https://api.siliconflow.cn/v1/audio/transcriptions',
+        model: active.model ?? 'XingChenAGI/XingChenASR-V3.2-Ultra',
+        requestTimeoutMs: active.requestTimeoutMs ?? 60_000,
+        inputSampleRate: active.inputSampleRate ?? 16_000,
+        outputSampleRate: active.outputSampleRate ?? 48_000,
+        ttsRate: active.ttsRate ?? DEFAULT_EDGE_TTS_RATE,
+        silenceDurationMs: active.silenceDurationMs ?? 1_500,
+        speechThreshold: active.speechThreshold ?? 0.015,
+        minSpeechDurationMs: active.minSpeechDurationMs ?? 250,
+        preRollMs: active.preRollMs ?? 400,
+        trailingSilenceMs: active.trailingSilenceMs ?? 200,
+        maxUtteranceMs: active.maxUtteranceMs ?? 60_000,
       })
-      const session = new LocalSession(backend, emit, voiceSessionId, config.interactionMode ?? 'speech-shell')
+      const session = new LocalSession(backend, emit, voiceSessionId, active.interactionMode ?? 'speech-shell')
       try { await session.start(); return session } catch (error: unknown) {
         await session.close().catch(() => {})
         throw error
@@ -97,6 +110,14 @@ export function apply(ctx: Context, config: Config = {}): () => void {
     },
   }
   return ctx.voice.registerProvider(provider)
+}
+
+/** Resolve the key per connection so a settings-page write reaches the next attempt. */
+export async function resolveSiliconFlowApiKey(ctx: Context, config: Config): Promise<string> {
+  if (config.apiKey !== undefined && config.apiKey.trim() !== '') return config.apiKey
+  const credentials = ctx.get('credentials')
+  if (credentials !== undefined) return (await credentials.resolve(SILICONFLOW_API_KEY_REF))?.value ?? ''
+  return process.env.SILICONFLOW_API_KEY ?? ''
 }
 
 export { LocalSession } from './session.ts'

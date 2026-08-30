@@ -38,6 +38,10 @@ Release 页面：[v0.3.6](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.6
 
 语音识别需要你自己的[硅基流动 API Key](https://siliconflow.cn/)，配置名只有一个：`SILICONFLOW_API_KEY`。语音转文字使用硅基流动当前免费的 [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra)；免费状态和使用规则以模型页面为准。Edge TTS 不需要 API Key。
 
+推荐在 DSH 中打开“设置 → 插件 → 插件配置”，展开“语音助手（Voco）”，填写 API Key 并保存。密钥保存在 DSH 凭据库中，不写入普通设置文件；保存后重新开启或重连语音即可生效。
+
+环境变量和 `.env` 仍作为兼容与自动化配置方式保留。
+
 在启动 DSH 的同一个 PowerShell 中临时设置：
 
 ```powershell
@@ -77,6 +81,8 @@ dsh plugin --profile web remove @flowingspring/dsh-voco
 ```
 
 卸载不会自动删除 DSH 会话或语音历史。
+
+卸载也不会删除已经保存的 API Key。需要彻底清除时，从 `%USERPROFILE%\.dsh\.credentials.yaml`（设置了 `DSH_HOME` 时为 `$DSH_HOME/.credentials.yaml`）的 `refs` 下删除 `SILICONFLOW_API_KEY`，并同时清理系统环境变量或 `.env` 中的同名配置。
 
 ## 功能
 

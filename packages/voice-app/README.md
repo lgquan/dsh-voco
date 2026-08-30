@@ -38,6 +38,10 @@ Release page: [v0.3.6](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.6)
 
 Speech recognition requires your own [SiliconFlow API key](https://siliconflow.cn/). The only configuration name is `SILICONFLOW_API_KEY`. Speech-to-text uses SiliconFlow's currently free [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) model; current availability and pricing are governed by the model page. Edge TTS does not require a key.
 
+The recommended path is **Settings → Plugins → Plugin configuration** in DSH. Expand **Voice Assistant (Voco)**, enter the API key, and save. The key is stored in DSH credentials rather than the regular settings file. Start or reconnect Voice after saving.
+
+Environment variables and `.env` remain supported for compatibility and automation.
+
 For a temporary setting, use the same PowerShell session that starts DSH:
 
 ```powershell
@@ -77,6 +81,8 @@ dsh plugin --profile web remove @flowingspring/dsh-voco
 ```
 
 Uninstalling does not delete DSH sessions or Voice history.
+
+It also leaves a saved API key in place. To remove the key completely, delete `SILICONFLOW_API_KEY` from `refs` in `%USERPROFILE%\.dsh\.credentials.yaml` (or `$DSH_HOME/.credentials.yaml` when configured), and remove the same name from the process environment or any `.env` file.
 
 ## Features
 

@@ -55,6 +55,12 @@ dsh web
 
 插件只需要一个密钥：`SILICONFLOW_API_KEY`。请先在[硅基流动控制台](https://siliconflow.cn/)申请自己的 API Key。语音转文字使用硅基流动当前免费的 [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra)；免费状态和使用规则以后续模型页面为准。不要把真实密钥写进源码、提交到 GitHub，或发送给其他人。
 
+### 推荐配置：DSH 设置页面
+
+启动 DSH 后打开“设置 → 插件 → 插件配置”，展开“语音助手（Voco）”，填写 API Key 并保存。密钥写入 DSH 的凭据库，不会写进普通设置文件，界面也不会读回密钥明文。保存后重新开启或重连语音即可生效。
+
+下面的环境变量和 `.env` 方式继续保留，适合自动化或已有部署。
+
 ### 临时配置：当前 PowerShell 会话
 
 在启动 DSH 的同一个终端中设置：
@@ -74,9 +80,9 @@ dsh web
 SILICONFLOW_API_KEY=sk-your-api-key
 ```
 
-也可以在执行 `dsh web` 的当前目录创建 `.env`。DSH 会在启动时读取这些环境层，插件随后从 `process.env.SILICONFLOW_API_KEY` 获取密钥。无需进入 npm 安装目录，也不要修改 `node_modules` 中的文件。
+也可以在执行 `dsh web` 的当前目录创建 `.env`。DSH 凭据服务会读取这些环境层，插件在每次新建语音连接时通过凭据服务解析 `SILICONFLOW_API_KEY`。无需进入 npm 安装目录，也不要修改 `node_modules` 中的文件。
 
-如果同时设置了系统环境变量和 `.env`，已经继承的环境变量优先。修改 `.env` 后请重启 `dsh web`，因为环境在进程启动时读取一次。
+如果同时设置了系统环境变量、DSH 凭据库和 `.env`，已经继承的环境变量优先，其次是 DSH 凭据库。修改 `.env` 后请重启 `dsh web`，因为环境在进程启动时读取一次。
 
 ## 安装后怎么使用
 
@@ -103,6 +109,8 @@ dsh plugin --profile web add @flowingspring/dsh-voco
 ```powershell
 dsh plugin --profile web remove @flowingspring/dsh-voco
 ```
+
+卸载插件不会自动删除已经保存的 API Key。需要彻底清除时，从 `%USERPROFILE%\.dsh\.credentials.yaml`（设置了 `DSH_HOME` 时为 `$DSH_HOME/.credentials.yaml`）的 `refs` 下删除 `SILICONFLOW_API_KEY`，并同时清理系统环境变量或 `.env` 中的同名配置。
 
 卸载插件不会删除已经保存的 DSH 会话和语音历史；如需清理数据，请先确认对应数据目录后再手动处理。
 
