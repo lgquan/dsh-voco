@@ -455,6 +455,66 @@ describe('Voice UI surfaces', () => {
     expect(openSession).toHaveBeenCalledWith(TASK_SESSION)
   })
 
+  it('recovers the Voice sidebar disclosure from the Host catalog when history is stale', async () => {
+    const secondTask = 'voice-task-session-2' as SessionId
+    const state = listState()
+    state.subagentsByParent = {
+      [VOICE_SESSION]: {
+        entries: [
+          { kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '只读列出工作区根目录文件' },
+          { kind: 'child', id: secondTask, mode: 'continuable', label: '读取 package.json 首行' },
+        ],
+        parentAvailable: true,
+        state: 'ready',
+        error: null,
+      },
+    } as typeof state.subagentsByParent
+    render(<>
+      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
+      <VoiceSessionMarkers
+        {...runtimeProps() as unknown as never}
+        useSessions={selector => selector(state)}
+        useVoiceHistory={selector => selector({
+          entries: [],
+          taskActivity: [
+            { sessionId: TASK_SESSION, parentSessionId: VOICE_SESSION, lastActiveAt: 2 },
+            { sessionId: secondTask, parentSessionId: VOICE_SESSION, lastActiveAt: 3 },
+          ],
+        })}
+        openSession={vi.fn()}
+        refreshSubagents={vi.fn()}
+        setSubagentCatalogOpen={vi.fn()}
+      />
+    </>)
+
+    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
+  })
+
+  it('does not infer a Voice parent from an ordinary Host subagent catalog', async () => {
+    const state = listState()
+    state.subagentsByParent = {
+      [VOICE_SESSION]: {
+        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '普通后台任务' }],
+        parentAvailable: true,
+        state: 'ready',
+        error: null,
+      },
+    } as typeof state.subagentsByParent
+    render(<>
+      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">普通会话</span></div></div>
+      <VoiceSessionMarkers
+        {...runtimeProps() as unknown as never}
+        useSessions={selector => selector(state)}
+        useVoiceHistory={selector => selector({ entries: [], taskActivity: [] })}
+        openSession={vi.fn()}
+        refreshSubagents={vi.fn()}
+        setSubagentCatalogOpen={vi.fn()}
+      />
+    </>)
+
+    await waitFor(() => { expect(screen.queryByRole('button', { name: '展开语音子会话' })).toBeNull() })
+  })
+
   it('adds archive-manager deletion only when its public RPC capability is supplied', async () => {
     const openSession = vi.fn()
     const deleteSession = vi.fn().mockResolvedValue(undefined)

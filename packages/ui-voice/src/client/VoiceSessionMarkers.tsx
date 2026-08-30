@@ -44,6 +44,12 @@ export function VoiceSessionMarkers({ useSessions, useWorkspaces, useVoiceHistor
 
   useEffect(() => {
     const voiceTitles = new Set<SessionId>(history.entries.map(entry => entry.sessionId))
+    // A session list can outlive the local parent index (for example after a
+    // profile reload). Delegation cards persist the child -> Voice parent
+    // association, which is enough to recover the parent's disclosure row.
+    for (const entry of history.taskActivity ?? []) {
+      if (entry.parentSessionId !== undefined) voiceTitles.add(entry.parentSessionId)
+    }
     const taskActivity = new Map((history.taskActivity ?? []).map(entry => [entry.sessionId, entry.lastActiveAt]))
     const sessionIds = new Set(Object.keys(sessions.byId))
     for (const parentId of voiceTitles) {

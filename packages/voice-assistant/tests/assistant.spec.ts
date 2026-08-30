@@ -894,13 +894,14 @@ describe('voice assistant driver', () => {
     expect(second.followup).toHaveBeenCalledTimes(2)
   })
 
-  it('rotates a pressured continuous child into a fresh lineage child with bounded handoff', async () => {
+  it('rotates a continuous child exactly at the 95% boundary with bounded handoff', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
+    let totalTokens = 949
     class FakeTokenMeter extends Service {
       constructor(serviceCtx: Context) { super(serviceCtx, 'tokenMeter') }
-      measure = vi.fn(() => ({ totalTokens: 960 }))
+      measure = vi.fn(() => ({ totalTokens }))
     }
     const createdAgents = installAgentFactory(ctx, created => {
       created.session.append('request/context', { provider: 'test', model: 'test', contextWindow: 1_000 })
@@ -936,7 +937,12 @@ describe('voice assistant driver', () => {
       send: () => {}, steer: vi.fn(), inject: () => {}, followup: vi.fn(),
     } satisfies Agent
     ctx.agents.register(sourceAgent)
-    await ctx.plugin({ apply, inject }, { taskSessionPolicy: 'continuous', taskSessionHandoffMaxChars: 600 })
+    await ctx.plugin({ apply, inject }, {
+      taskSessionPolicy: 'continuous',
+      taskSessionRotationRatio: 0.95,
+      taskSessionRotationReserveTokens: 0,
+      taskSessionHandoffMaxChars: 600,
+    })
     await ctx.voice.open(source.id)
 
     emit?.({ type: 'task.command', call: {
@@ -960,6 +966,21 @@ describe('voice assistant driver', () => {
       command: { type: 'realtime_delegation', input: '继续完成第二项工作' },
     } })
     await settle()
+    expect(createdAgents).toHaveLength(1)
+    expect(first.followup).toHaveBeenCalledTimes(2)
+    const secondMessage = first.followup.mock.calls[1]?.[0]
+    if (secondMessage === undefined) throw new Error('second task message missing')
+    first.session.append('turn/start', { turn: 2 })
+    ctx.emit('agent/inbox/claimed', { agent: first.agent, message: secondMessage, turn: 2 })
+    first.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    await settle()
+
+    totalTokens = 950
+    emit?.({ type: 'task.command', call: {
+      id: VoiceCommandCallId('rotation-third'),
+      command: { type: 'realtime_delegation', input: '继续完成第三项工作' },
+    } })
+    await settle()
     expect(createdAgents).toHaveLength(2)
     const second = createdAgents[1]
     if (second === undefined) throw new Error('successor Agent was not created')
@@ -973,6 +994,8 @@ describe('voice assistant driver', () => {
     })
     expect(second.session.header.parentSession).toBe(source.id)
     expect(second.session.header.origin).toBe('subagent')
+    expect(ctx.sessions.get(first.session.id)).toBe(first.session)
+    expect(ctx.agents.get(first.agent.id)).toBe(first.agent)
     const handoff = second.inject.mock.calls[0]?.[0]
     const handoffText = handoff?.content[0]
     expect(handoffText?.type).toBe('text')
@@ -980,7 +1003,20 @@ describe('voice assistant driver', () => {
       expect(handoffText.text).toContain('<voice_task_handoff>')
       expect(handoffText.text.length).toBeLessThanOrEqual(600 + 80)
     }
-    expect(ctx.tokenMeter.measure).toHaveBeenCalled()
+    expect(source.events.flatMap(event => (
+      event.type === 'voice/task-session-bound' ? [event.data.taskSessionId] : []
+    ))).toEqual([first.session.id, second.session.id])
+    const latestDelegation = source.events.findLast(event => event.type === 'voice/task-delegated')
+    expect(latestDelegation?.type === 'voice/task-delegated'
+      ? latestDelegation.data.taskSessionId
+      : undefined).toBe(second.session.id)
+    const latestBinding = source.events.findLast(event => event.type === 'voice/agent-binding-state')
+    expect(latestBinding?.type === 'voice/agent-binding-state' ? latestBinding.data : undefined).toMatchObject({
+      voiceConversationId: source.id,
+      agentSessionId: second.session.id,
+      status: 'queued',
+    })
+    expect(ctx.tokenMeter.measure).toHaveBeenCalledTimes(2)
   })
 
   it('lets a frontend voice Agent drive one exact text-Agent task', async () => {

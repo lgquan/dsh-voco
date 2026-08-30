@@ -21,7 +21,7 @@ export interface VoiceDelegationInjected {
   }
   readonly openSession: (id: SessionId) => void
   readonly cancelTask: (id: string) => void
-  readonly recordTaskActivity?: (id: SessionId, at: number) => void
+  readonly recordTaskActivity?: (id: SessionId, at: number, parentSessionId?: SessionId) => void
 }
 
 export type VoiceUtteranceViewProps =
@@ -76,8 +76,10 @@ export function VoiceDelegationView({ node, sessionId, useSessions, useWorkspace
   const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     const at = node.data.lastActivityAt
-    if (recordTaskActivity !== undefined && at !== undefined) recordTaskActivity(node.data.taskSessionId, at)
-  }, [node.data.lastActivityAt, node.data.taskSessionId, recordTaskActivity])
+    if (recordTaskActivity !== undefined && at !== undefined) {
+      recordTaskActivity(node.data.taskSessionId, at, sessionId)
+    }
+  }, [node.data.lastActivityAt, node.data.taskSessionId, recordTaskActivity, sessionId])
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
   const navigable = useSessions(sessions => !isSessionEffectivelyArchived(
     node.data.taskSessionId,

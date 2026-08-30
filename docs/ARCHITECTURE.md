@@ -59,7 +59,7 @@ voice 能力层 ---- voice-local ---- SiliconFlow ASR / Edge TTS
 
 来源 Session 是用户的主要对话历史。`isolated` 策略为每次委派创建一个子会话；`continuous` 策略在模型一致且上下文压力未知或未达软高水位时复用当前子会话。压力达到 `taskSessionRotationRatio` 或为下一任务保留的 token 预算不足时，在任务边界创建新的空 successor，并注入有限的工作状态交接；不会使用 `SessionStore.fork()` 复制旧历史。每次请求仍拥有独立的 delegation id。绑定关系通过 `voice/task-session-bound` 和 `voice/agent-binding-state` 事件记录，并在重连或重启后恢复最新子会话；旧子会话保留为可导航的历史项。
 
-侧栏语音标识是客户端维护的来源 Session ID 索引。语音成功连接后记录该 ID，因此文字先输入、语音后使用的混合会话仍显示波形图标。后台 Agent Session ID 不会写入这个索引，也不会显示语音图标。
+侧栏语音标识是客户端维护的来源 Session ID 索引。语音成功连接后记录该 ID，因此文字先输入、语音后使用的混合会话仍显示波形图标。后台 Agent Session ID 不会写入来源索引，也不会显示语音图标。委派任务同时持久化 child 到 Voice parent 的轻量关联；当浏览器本地来源索引因刷新或历史重建暂时缺失时，侧栏可据此恢复对应父会话的语音标识和子会话展开入口。没有来源索引或 child 关联的普通 Host 子代理不会被误标为语音会话。
 
 ## UI 集成
 

@@ -191,7 +191,7 @@ export function apply(ctx: ClientContext): void {
   const utteranceInjected = (): VoiceUtteranceInjected => ({ hooks: { voice: controller } })
   const delegationInjected = (): VoiceDelegationInjected => ({
     hooks: { voice: controller },
-    recordTaskActivity: (id, at) => { history.recordTaskActivity(id, at) },
+    recordTaskActivity: (id, at, parentSessionId) => { history.recordTaskActivity(id, at, parentSessionId) },
     openSession: (id) => {
       if (isEffectivelyArchivedInContext(ctx, id)) return
       const sessions = ctx.sessions as typeof ctx.sessions & {

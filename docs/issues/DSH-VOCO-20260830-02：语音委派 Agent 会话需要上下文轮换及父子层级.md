@@ -4,8 +4,8 @@
 - 发现日期：2026-08-30
 - 发现会话或复现方式：继续评估语音会话与后台 Agent 委派会话的绑定和上下文窗口策略
 - 相关模块或代码：`packages/voice-assistant`、`packages/voice`、`packages/ui-voice`、`docs/ARCHITECTURE.md`
-- 状态：已解决
-- 验证情况：`pnpm typecheck`、全量 `pnpm test -- --run`（13 个测试文件、125 个测试）和 `pnpm build` 已通过；真实宿主侧栏已验证展开按钮和子项渲染，用户已确认新建委派会话可以在语音父会话下展开查看
+- 状态：处理中
+- 验证情况：`pnpm typecheck`、全量 `pnpm test -- --run`（13 个测试文件、135 个测试）和 `pnpm build` 已通过；轮换边界测试确认 94.9% 不轮换、95% 正好轮换，并确认新旧 child 保留、后续委派和持久化绑定切换到新 child、重启后恢复最新 child；真实语音 Web 通道以临时 1% 阈值连续完成两次委派，页面中的同一语音父会话显示并可展开两个持久化 child；新增 stale-history 恢复测试、普通 Host 子代理负向测试和 taskActivity 父子关联持久化测试均通过。未修改 DeepSeek Harness 主体或底层源码；新 bundle 需要宿主重启后才能在已有页面中生效。
 
 ## 问题描述
 一个语音会话可能连续委派多个任务。这里有两个独立需求：所有委派会话都归入语音会话之下，以及 `continuous` 模式中的单个 Agent 接近上下文上限时进行换代。前者在 `isolated` 模式下也成立，后者只对持续复用模式有意义。若持续模式等宿主自动压缩再继续，语音任务的长期上下文和可解释性会变差。另一个表现层问题是，当前宿主 workspace sidebar 会把 `origin: 'subagent'` 从顶层列表过滤掉，但未提供子会话树渲染，导致用户只能从“查看后台详情”进入委派会话。
@@ -54,6 +54,13 @@
 - 2026-08-30：用户使用 `dsh-session-session-2ded6f6e-30a8-4546-b32f-64413ad47d75` 复现箭头消失及展开后无会话。检查发现其子会话日志完整且压缩校验通过，但仅有 `parentSession` 元数据，没有宿主 `@deepseek-ai/dsh-subagent` 要求的 `subagent/descriptor` 事件，因此目录返回“会话记录损坏”。语音 Agent 创建路径现追加版本化 descriptor：隔离任务为 `one-shot`，连续任务为 `continuable`，同时保存 provider/model 和可读任务标签；注册该事件类型并加入 `@deepseek-ai/dsh-subagent` peer 依赖。现有旧子会话不会被改写，新委派会话将由宿主正常分类。
 - 2026-08-30：用户完成真实语音委派验收，确认侧栏可以从语音父会话展开并看到新建的 Agent 子会话；问题状态更新为已解决。
 - 2026-08-30：本地启动 web profile 验证宿主实际 session row 结构为 `[role="treeitem"].YDXeBa_sessionRow`；当前浏览器实例无语音历史，因此未进行真实语音父会话视觉验收。宿主需重载新构建 bundle 后再用上述测试会话验收。
+- 2026-08-30：复核轮换测试时发现原 `960/1000` 场景仍启用了默认 2048 token reserve，无法单独证明 95% 比例边界。测试现显式将 reserve 设为 0，并在同一 continuous child 上验证 `949/1000` 继续复用、`950/1000` 正好创建 successor；同时断言旧 child 仍保留、新 child 仍以语音 Session 为父级、后续委派和最新 `voice/agent-binding-state` 均指向 successor。
+- 2026-08-30：加强重启恢复测试，以旧 child 和 successor 同时存在、durable binding 指向 successor 的状态模拟插件重启，确认下一次委派恢复 successor，旧 child 不被移除。无需将生产阈值临时改为 5%；配置 schema 当前只允许 50% 至 99%，测试通过缩小上下文窗口和伪造 Token Meter 精确制造边界，不污染运行配置。
+- 2026-08-30：完成真实宿主轮换验收。临时将 `dsh-voco` 的 schema 最低值和 profile 比例调整为 1%，重建并重启本地 `dsh web`；由于自动化浏览器的麦克风采集停在连接阶段，改用同一 `/voice` WebSocket 的 `text.submit` 输入两条只读转写，实际经过 `voice-web -> voice-local -> voice-assistant -> Agent`。父 Session `session-92da8fc2-632f-433d-a666-eea78e7f52ff` 的两次任务均经历 `route_transcription` 及 `queued -> running -> completed`，随后页面顶部显示“2 个子代理”，侧栏展开后同时显示“只读列出工作区根目录文件”和“读取 package.json 首行”两个 child；对应新近持久化 Session 为 `session-93f2a8c4-be14-479a-8236-4e400ea3b7e9` 与 `session-3e62a88d-7553-47fb-816e-aa4de6f1d81d`。测试后已恢复 schema 最低值 50% 与 profile 默认比例 95%，测试 Session 保留供页面复核。
+- 2026-08-30：用户复现“顶部显示 2 个子代理，但语音父会话行没有语音图标和展开箭头”。附图 `C:\Users\QUAN\AppData\Local\Temp\codex-clipboard-fa0d5f8e-523b-4db4-848f-7ebffc329392.png` 与自动化回归场景一致：Host catalog 已有两个 child，但浏览器语音历史为空时，`VoiceSessionMarkers` 仅凭 `voiceHistory.entries` 判定父会话，因而移除标记和展开控件。
+- 2026-08-30：确认 Host `SubagentCatalog` 契约只有 child、mode、activity、label 和 `parentAvailable`，没有 provider 或插件来源字段；不能在插件中把所有 `subagentsByParent` 父键都认作 Voice，否则会误标普通 Harness 子代理。
+- 2026-08-30：在 `dsh-voco` 内为持久化 `taskActivity` 增加可选 `parentSessionId`。`VoiceDelegationView` 观察到委派任务时写入 child -> Voice parent 关联；侧栏在 Voice 主会话历史过期但关联仍存在时恢复语音标记和展开按钮。增加普通 Host 子代理目录的负向测试，确保无语音证据时不显示展开控件。
+- 2026-08-30：提交前审计确认生产阈值已恢复为 `taskSessionRotationRatio: 0.95`，临时 `0.01` 仅用于历史真实验收；`node_modules`、各 package 的 `lib` 和缓存均被 `.gitignore` 忽略且未纳入版本控制。架构说明同步记录 child -> Voice parent 恢复路径；现有 Web host 未重启前不会自动加载新 bundle，因此本问题仍保留“处理中”状态。
 
 ## 后续低优先级优化
 - 为每个 child 提供更明确的生成序号或可读标签，改善大量轮换后的识别。

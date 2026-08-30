@@ -800,7 +800,7 @@ describe('voice assistant branch coverage', () => {
     expect(harness.taskBindings.get(taskSessionId)).toBe(harness.bindings.get(sourceId))
   })
 
-  it('prefers the complete durable binding state when resuming a continuous Agent', async () => {
+  it('resumes the latest rotated continuous child from durable binding state', async () => {
     const harness = makeHarness({ taskSessionPolicy: 'continuous' })
     const sourceId = SessionId('binding-state-source')
     const staleId = SessionId('stale-task-session')
@@ -812,6 +812,8 @@ describe('voice assistant branch coverage', () => {
     source.append('voice/task-delegated', {
       taskId: VoiceTaskId('stale-task'), taskSessionId: staleId, input: 'old',
     })
+    source.append('voice/task-session-bound', { taskSessionId: staleId })
+    source.append('voice/task-session-bound', { taskSessionId: currentId })
     source.append('voice/agent-binding-state', {
       voiceConversationId: sourceId,
       agentSessionId: currentId,
@@ -824,6 +826,10 @@ describe('voice assistant branch coverage', () => {
     const voice = await harness.open(sourceId, 'frontend-agent')
     await startDelegation(harness, voice, 'continue current binding')
     expect(harness.bindings.get(sourceId)?.active?.taskSessionId).toBe(currentId)
+    expect(harness.sessions.has(staleId)).toBe(true)
+    expect(harness.sessions.has(currentId)).toBe(true)
+    expect(harness.created).toHaveLength(1)
+    expect(harness.created[0]?.id).toBe(currentId)
   })
 
   it('keeps a question task active and resumes the same Agent after the user replies', async () => {

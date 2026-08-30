@@ -14,6 +14,8 @@ export interface VoiceHistoryEntry {
 export interface VoiceTaskActivityEntry {
   readonly sessionId: SessionId
   readonly lastActiveAt: number
+  /** Voice parent that owns this delegated child, when observed by the UI. */
+  readonly parentSessionId?: SessionId
 }
 
 /** Browser-persistent Voice Session index. */
@@ -68,7 +70,14 @@ function readHistory(storage: Storage | undefined): VoiceHistorySnapshot {
         const sessionId = item.sessionId as SessionId
         if (taskSeen.has(sessionId)) continue
         taskSeen.add(sessionId)
-        taskActivity.push({ sessionId, lastActiveAt: item.lastActiveAt })
+        const parentSessionId = typeof item.parentSessionId === 'string' && item.parentSessionId !== ''
+          ? item.parentSessionId as SessionId
+          : undefined
+        taskActivity.push({
+          sessionId,
+          lastActiveAt: item.lastActiveAt,
+          ...(parentSessionId === undefined ? {} : { parentSessionId }),
+        })
       }
       taskActivity.sort((left, right) => right.lastActiveAt - left.lastActiveAt)
     }
@@ -102,14 +111,20 @@ export class VoiceHistoryStore {
   }
 
   /** Retain the latest timestamp seen in a delegated task's durable events. */
-  recordTaskActivity(sessionId: SessionId, lastActiveAt: number): void {
+  recordTaskActivity(sessionId: SessionId, lastActiveAt: number, parentSessionId?: SessionId): void {
     if (!Number.isFinite(lastActiveAt) || lastActiveAt < 0) return
     const entries = this.snapshot.getSnapshot().taskActivity ?? []
-    const previous = entries.find(entry => entry.sessionId === sessionId)?.lastActiveAt ?? 0
+    const previousEntry = entries.find(entry => entry.sessionId === sessionId)
+    const previous = previousEntry?.lastActiveAt ?? 0
     const nextTime = Math.max(previous, lastActiveAt)
-    if (nextTime === previous) return
+    const owner = parentSessionId ?? previousEntry?.parentSessionId
+    if (nextTime === previous && owner === previousEntry?.parentSessionId) return
     const next = [
-      { sessionId, lastActiveAt: nextTime },
+      {
+        sessionId,
+        lastActiveAt: nextTime,
+        ...(owner === undefined ? {} : { parentSessionId: owner }),
+      },
       ...entries.filter(entry => entry.sessionId !== sessionId),
     ]
     this.snapshot.set({ ...this.snapshot.getSnapshot(), taskActivity: next })

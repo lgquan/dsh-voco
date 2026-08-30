@@ -72,4 +72,21 @@ describe('VoiceHistoryStore', () => {
     expect(consoleError).toHaveBeenCalledTimes(2)
     unreadable.dispose()
   })
+
+  it('persists delegated child ownership and can fill it without a newer timestamp', () => {
+    localStorage.setItem('dsh.voice.history.v1', JSON.stringify({
+      version: 1,
+      entries: [],
+      taskActivity: [{ sessionId: 'child', lastActiveAt: 10 }],
+    }))
+    const history = new VoiceHistoryStore()
+    history.recordTaskActivity('child' as SessionId, 10, 'voice-parent' as SessionId)
+    expect(history.snapshot.getSnapshot().taskActivity).toEqual([{
+      sessionId: 'child', lastActiveAt: 10, parentSessionId: 'voice-parent',
+    }])
+    expect(JSON.parse(localStorage.getItem('dsh.voice.history.v1') ?? '{}').taskActivity).toEqual([{
+      sessionId: 'child', lastActiveAt: 10, parentSessionId: 'voice-parent',
+    }])
+    history.dispose()
+  })
 })
