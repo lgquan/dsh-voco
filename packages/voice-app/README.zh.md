@@ -36,7 +36,7 @@ Release 页面：[v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5
 
 ## 配置 API Key
 
-语音识别需要你自己的[硅基流动 API Key](https://siliconflow.cn/)，配置名只有一个：`SILICONFLOW_API_KEY`。Edge TTS 不需要 API Key。
+语音识别需要你自己的[硅基流动 API Key](https://siliconflow.cn/)，配置名只有一个：`SILICONFLOW_API_KEY`。语音转文字使用硅基流动当前免费的 [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra)；免费状态和使用规则以模型页面为准。Edge TTS 不需要 API Key。
 
 在启动 DSH 的同一个 PowerShell 中临时设置：
 
@@ -80,7 +80,7 @@ dsh plugin --profile web remove @flowingspring/dsh-voco
 
 ## 功能
 
-- SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra` 云端语音识别。
+- SiliconFlow 免费模型 [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) 云端语音转文字。
 - Edge TTS `zh-CN-XiaoxiaoNeural` 语音回复。
 - 语音打断、页面切换、断线重连和历史恢复。
 - 委派前即时确认，完整报告保留在 DSH 任务界面。

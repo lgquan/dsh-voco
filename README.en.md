@@ -10,7 +10,7 @@ The plugin uses SiliconFlow cloud speech recognition and Edge TTS. It is not a s
 
 - Node.js 22.19 or newer (used by the DSH CLI).
 - A DSH Web profile that can start successfully.
-- A SiliconFlow API key. Speech recognition consumes SiliconFlow API usage; each user must obtain and fund their own key.
+- A SiliconFlow API key. Voco uses the currently free [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) speech-to-text model, but every user still needs their own key. Current availability and pricing are governed by the SiliconFlow model page.
 - A modern browser with microphone support.
 
 Install the DSH CLI first if it is not already available:
@@ -53,7 +53,7 @@ dsh web
 
 ## Configure the SiliconFlow API key
 
-The only required secret is `SILICONFLOW_API_KEY`. Get your own key from the [SiliconFlow console](https://siliconflow.cn/). Never put a real key in source code, commit it to GitHub, or share it with other users.
+The only required secret is `SILICONFLOW_API_KEY`. Get your own key from the [SiliconFlow console](https://siliconflow.cn/). Speech-to-text uses SiliconFlow's currently free [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) model; current availability and pricing are governed by the model page. Never put a real key in source code, commit it to GitHub, or share it with other users.
 
 ### Temporary: current PowerShell session
 
@@ -108,7 +108,7 @@ Uninstalling the plugin does not delete existing DSH sessions or Voice history. 
 
 ## Highlights
 
-- SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra` cloud speech recognition.
+- SiliconFlow's free [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) cloud speech-to-text model.
 - Edge TTS `zh-CN-XiaoxiaoNeural` voice output.
 - Voice, typed messages, and background Agent tasks in one DSH session.
 - Immediate acknowledgement before delegation; full reports remain in the task UI.

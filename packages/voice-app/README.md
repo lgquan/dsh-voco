@@ -36,7 +36,7 @@ Release page: [v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
 
 ## Configure the API key
 
-Speech recognition requires your own [SiliconFlow API key](https://siliconflow.cn/). The only configuration name is `SILICONFLOW_API_KEY`; Edge TTS does not require a key.
+Speech recognition requires your own [SiliconFlow API key](https://siliconflow.cn/). The only configuration name is `SILICONFLOW_API_KEY`. Speech-to-text uses SiliconFlow's currently free [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) model; current availability and pricing are governed by the model page. Edge TTS does not require a key.
 
 For a temporary setting, use the same PowerShell session that starts DSH:
 
@@ -80,7 +80,7 @@ Uninstalling does not delete DSH sessions or Voice history.
 
 ## Features
 
-- SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra` cloud speech recognition.
+- SiliconFlow's free [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) cloud speech-to-text model.
 - Edge TTS `zh-CN-XiaoxiaoNeural` voice responses.
 - Interruption, navigation, reconnects, and restored history.
 - Immediate acknowledgement before delegation; full reports remain in the DSH task UI.

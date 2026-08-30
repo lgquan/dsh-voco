@@ -10,7 +10,7 @@
 
 - Node.js 22.19 或更高版本（安装 DSH CLI 时使用）。
 - 一个已经可以运行的 DSH Web profile。
-- 一个硅基流动 API Key。语音识别会产生硅基流动 API 用量，Key 由用户自行申请和承担费用。
+- 一个硅基流动 API Key。插件使用当前免费的语音转文字模型 [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra)，但仍需用户自行申请 Key；免费状态和使用规则以硅基流动模型页面为准。
 - 支持麦克风的现代浏览器。
 
 如果还没有 DSH CLI，先安装：
@@ -53,7 +53,7 @@ dsh web
 
 ## 配置硅基流动 API Key
 
-插件只需要一个密钥：`SILICONFLOW_API_KEY`。请先在[硅基流动控制台](https://siliconflow.cn/)申请自己的 API Key。不要把真实密钥写进源码、提交到 GitHub，或发送给其他人。
+插件只需要一个密钥：`SILICONFLOW_API_KEY`。请先在[硅基流动控制台](https://siliconflow.cn/)申请自己的 API Key。语音转文字使用硅基流动当前免费的 [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra)；免费状态和使用规则以后续模型页面为准。不要把真实密钥写进源码、提交到 GitHub，或发送给其他人。
 
 ### 临时配置：当前 PowerShell 会话
 
@@ -108,7 +108,7 @@ dsh plugin --profile web remove @flowingspring/dsh-voco
 
 ## 主要能力
 
-- SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra` 云端语音识别。
+- SiliconFlow 免费模型 [`XingChenAGI/XingChenASR-V3.2-Ultra`](https://cloud.siliconflow.cn/models?target=XingChenAGI/XingChenASR-V3.2-Ultra) 云端语音转文字。
 - Edge TTS `zh-CN-XiaoxiaoNeural` 中文语音回复。
 - 语音、文字和后台 Agent 任务可以在同一 DSH 会话中协作。
 - 委派前即时播报确认语，完整报告保留在任务界面。

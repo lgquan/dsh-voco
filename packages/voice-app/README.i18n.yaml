@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/bundle/voice-app/README.md
-README.md: 85e0ddca1de5bfa3106c01a16ad66887759237ef
-README.zh.md: 8669857f56b4fefd0b0a1124be390cbb405b3803
+README.md: 3582129953c75938c6c08caa11526d5179f0631f
+README.zh.md: f7253637cf50cf5b9677bee512e45fdadd8cc712
