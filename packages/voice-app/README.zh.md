@@ -24,20 +24,15 @@ dsh plugin --profile web add @flowingspring/dsh-voco
 dsh web
 ```
 
-### GitHub 源码安装
+### GitHub Release 安装
 
-仓库根目录是 workspace，插件源码在 `packages/voice-app`。需要调试或修改源码时：
+GitHub Release 提供已经构建好的插件包，不需要下载源码或安装 pnpm：
 
 ```powershell
-git clone https://github.com/lgquan/dsh-voco.git
-cd dsh-voco
-npm install -g pnpm
-pnpm install
-pnpm build
-$repo = (Resolve-Path .).Path
-dsh plugin --profile web add "$repo\packages\voice-app"
-dsh web
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.5/flowingspring-dsh-voco-0.3.5.tgz
 ```
+
+Release 页面：[v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
 
 ## 配置 API Key
 
@@ -66,6 +61,22 @@ SILICONFLOW_API_KEY=sk-your-api-key
 4. 普通聊天由前台回答，需要项目工具的工作会委派给后台 Agent。
 
 每个语音会话持续绑定自己的后台 Agent Session。上下文达到轮换阈值后，后续任务会自动进入新的子会话，但仍与原语音会话绑定。
+
+## 更新
+
+```powershell
+dsh plugin --profile web add @flowingspring/dsh-voco
+```
+
+也可以安装指定的 GitHub Release。更新后重启 `dsh web`。
+
+## 卸载
+
+```powershell
+dsh plugin --profile web remove @flowingspring/dsh-voco
+```
+
+卸载不会自动删除 DSH 会话或语音历史。
 
 ## 功能
 

@@ -35,27 +35,21 @@ dsh web
 
 打开终端显示的本地地址，在会话中点击麦克风并允许浏览器使用麦克风即可。
 
-## 方式二：从 GitHub 获取源码安装
+## 方式二：通过 GitHub Release 安装
 
-GitHub 仓库是一个 pnpm workspace，真正的 DSH 插件位于 `packages/voice-app`。源码安装适合需要查看代码、调试或修改插件的开发者：
+GitHub Release 提供和 npm 相同的预构建插件包，不需要 clone 源码或准备 pnpm 开发环境：
 
 ```powershell
-git clone https://github.com/lgquan/dsh-voco.git
-cd dsh-voco
-npm install -g pnpm
-pnpm install
-pnpm build
-$repo = (Resolve-Path .).Path
-dsh plugin --profile web add "$repo\packages\voice-app"
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.5/flowingspring-dsh-voco-0.3.5.tgz
 ```
 
-然后仍然使用 DSH 启动 Web UI：
+Release 页面：[v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
+
+无论选择哪种安装方式，最后都通过 DSH 启动 Web UI：
 
 ```powershell
 dsh web
 ```
-
-源码安装不会修改 DeepSeek Harness 的主体源码。重新安装或升级源码插件时，在仓库中重新执行 `pnpm install`、`pnpm build`，再执行一次本地路径安装命令即可。
 
 ## 配置硅基流动 API Key
 
@@ -84,7 +78,7 @@ SILICONFLOW_API_KEY=sk-your-api-key
 
 如果同时设置了系统环境变量和 `.env`，已经继承的环境变量优先。修改 `.env` 后请重启 `dsh web`，因为环境在进程启动时读取一次。
 
-## 开始使用
+## 安装后怎么使用
 
 1. 运行 `dsh web` 并打开 DSH Web UI。
 2. 新建或选择一个会话。
@@ -93,6 +87,24 @@ SILICONFLOW_API_KEY=sk-your-api-key
 5. 普通聊天由前台处理，需要读写项目或运行工具的工作会交给后台 Agent。
 
 语音会话可以被打断、断线重连和恢复历史。每个语音会话会持续绑定自己的后台 Agent Session；上下文达到轮换阈值时，插件会为后续任务创建新的子会话，但仍归属于同一语音会话。
+
+## 更新
+
+使用 npm 更新到最新版本：
+
+```powershell
+dsh plugin --profile web add @flowingspring/dsh-voco
+```
+
+也可以改用指定的 GitHub Release `.tgz` 地址。更新后重启 `dsh web`。
+
+## 卸载
+
+```powershell
+dsh plugin --profile web remove @flowingspring/dsh-voco
+```
+
+卸载插件不会删除已经保存的 DSH 会话和语音历史；如需清理数据，请先确认对应数据目录后再手动处理。
 
 ## 主要能力
 

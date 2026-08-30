@@ -35,27 +35,21 @@ dsh web
 
 Open the local URL printed by DSH, click the microphone in a session, and allow microphone access in the browser.
 
-## Option 2: Install from GitHub source
+## Option 2: Install from a GitHub Release
 
-The GitHub repository is a pnpm workspace. The actual DSH plugin is `packages/voice-app`. Use this route when you want to inspect, debug, or modify the source:
+GitHub Releases provide the same prebuilt plugin package as npm. No source checkout or pnpm development environment is required:
 
 ```powershell
-git clone https://github.com/lgquan/dsh-voco.git
-cd dsh-voco
-npm install -g pnpm
-pnpm install
-pnpm build
-$repo = (Resolve-Path .).Path
-dsh plugin --profile web add "$repo\packages\voice-app"
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.5/flowingspring-dsh-voco-0.3.5.tgz
 ```
 
-Start the Web UI through DSH as usual:
+Release page: [v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
+
+Whichever installation method you choose, start the Web UI through DSH:
 
 ```powershell
 dsh web
 ```
-
-This source installation does not modify DeepSeek Harness source code. After changing or updating the plugin, run `pnpm install`, `pnpm build`, and the local-path install command again.
 
 ## Configure the SiliconFlow API key
 
@@ -84,7 +78,7 @@ You may also create `.env` in the directory from which you run `dsh web`. DSH re
 
 An already inherited environment variable takes precedence over values from `.env`. Restart `dsh web` after changing `.env`, because the environment is loaded once per process.
 
-## First use
+## After installation
 
 1. Run `dsh web` and open the DSH Web UI.
 2. Create or select a session.
@@ -93,6 +87,24 @@ An already inherited environment variable takes precedence over values from `.en
 5. Ordinary conversation is handled in the frontend; work that needs project files, Shell, or other tools is delegated to the background Agent.
 
 Voice sessions support interruption, reconnects, and history restoration. Each Voice Session keeps its own background Agent Session binding. When the context rotation threshold is reached, Voco creates a new child session for later tasks while keeping it under the same Voice Session.
+
+## Update
+
+Update from npm:
+
+```powershell
+dsh plugin --profile web add @flowingspring/dsh-voco
+```
+
+You can also install a specific GitHub Release `.tgz` URL. Restart `dsh web` after updating.
+
+## Uninstall
+
+```powershell
+dsh plugin --profile web remove @flowingspring/dsh-voco
+```
+
+Uninstalling the plugin does not delete existing DSH sessions or Voice history. Confirm the relevant data directory before removing any stored data manually.
 
 ## Highlights
 

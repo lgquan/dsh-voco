@@ -24,20 +24,15 @@ dsh plugin --profile web add @flowingspring/dsh-voco
 dsh web
 ```
 
-### GitHub source
+### GitHub Release
 
-The repository root is a workspace; the plugin source is `packages/voice-app`. Use this route to inspect or modify the source:
+GitHub Releases provide a prebuilt plugin package; no source checkout or pnpm installation is required:
 
 ```powershell
-git clone https://github.com/lgquan/dsh-voco.git
-cd dsh-voco
-npm install -g pnpm
-pnpm install
-pnpm build
-$repo = (Resolve-Path .).Path
-dsh plugin --profile web add "$repo\packages\voice-app"
-dsh web
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.5/flowingspring-dsh-voco-0.3.5.tgz
 ```
+
+Release page: [v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
 
 ## Configure the API key
 
@@ -66,6 +61,22 @@ You may also put `.env` in the directory from which you run `dsh web`. Restart D
 4. Ordinary conversation is answered in the frontend; work that needs project tools is delegated to the background Agent.
 
 Each Voice Session keeps its own background Agent Session binding. When the context rotation threshold is reached, later tasks automatically use a new child session that remains associated with the original Voice Session.
+
+## Update
+
+```powershell
+dsh plugin --profile web add @flowingspring/dsh-voco
+```
+
+You can also install a specific GitHub Release. Restart `dsh web` after updating.
+
+## Uninstall
+
+```powershell
+dsh plugin --profile web remove @flowingspring/dsh-voco
+```
+
+Uninstalling does not delete DSH sessions or Voice history.
 
 ## Features
 
