@@ -15,6 +15,7 @@ interface FakeProviderSession {
   session: VoiceProviderSession
   spies: {
     appendAudio: ReturnType<typeof vi.fn>
+    beginManualUtterance: ReturnType<typeof vi.fn>
     commitAudio: ReturnType<typeof vi.fn>
     interruptResponse: ReturnType<typeof vi.fn>
     playbackEnded: ReturnType<typeof vi.fn>
@@ -28,6 +29,7 @@ interface FakeProviderSession {
 function providerSession(): FakeProviderSession {
   const spies = {
     appendAudio: vi.fn(),
+    beginManualUtterance: vi.fn(),
     commitAudio: vi.fn(),
     interruptResponse: vi.fn(),
     playbackEnded: vi.fn(),
@@ -39,6 +41,7 @@ function providerSession(): FakeProviderSession {
   return { spies, session: {
     audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
     interactionMode: 'frontend-agent',
+    beginManualUtterance: spies.beginManualUtterance,
     appendAudio: spies.appendAudio,
     commitAudio: spies.commitAudio,
     interruptResponse: spies.interruptResponse,
@@ -71,6 +74,7 @@ describe('voice runtime', () => {
     }
 
     ctx.voice.appendAudio(opened.id, new Uint8Array([1, 2]))
+    ctx.voice.beginManualUtterance(opened.id)
     ctx.voice.commitAudio(opened.id)
     ctx.voice.interruptResponse(opened.id)
     ctx.voice.playbackEnded(opened.id)
@@ -79,6 +83,7 @@ describe('voice runtime', () => {
     emit?.({ type: 'transcription.completed', utteranceId: VoiceUtteranceId('utterance-1'), text: 'hello' })
 
     expect(connected.spies.appendAudio).toHaveBeenCalledWith(new Uint8Array([1, 2]))
+    expect(connected.spies.beginManualUtterance).toHaveBeenCalledOnce()
     expect(connected.spies.commitAudio).toHaveBeenCalledOnce()
     expect(connected.spies.interruptResponse).toHaveBeenCalledOnce()
     expect(connected.spies.playbackEnded).toHaveBeenCalledOnce()

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { VoiceClientSnapshot } from './voice-controller.ts'
@@ -11,6 +12,8 @@ export interface VoiceControlInjected {
   /** Start a fresh Voice conversation located from the current Session. */
   readonly startVoice: (sourceSessionId: SessionId) => Promise<void>
   readonly retryVoice: () => Promise<void>
+  readonly beginPushToTalk: (sourceSessionId: SessionId) => void
+  readonly endPushToTalk: () => void
   readonly interruptResponse: () => void
   readonly setVoiceMuted: (muted: boolean) => void
 }
@@ -20,12 +23,43 @@ export type VoiceControlProps =
 
 /** Start a fresh Voice Session from this Session's location or control the active connection. */
 export function VoiceControl({
-  sessionId, useVoice, startVoice, retryVoice, setVoiceMuted, t,
+  sessionId, useVoice, startVoice, retryVoice, beginPushToTalk, endPushToTalk, setVoiceMuted, t,
   interruptResponse,
 }: VoiceControlProps) {
   const state = useVoice(snapshot => snapshot.state)
   const activeSessionId = useVoice(snapshot => snapshot.sessionId)
   const inputMuted = useVoice(snapshot => snapshot.inputMuted)
+  const pushToTalkActive = useVoice(snapshot => snapshot.pushToTalkActive)
+  const timer = useRef<number | undefined>(undefined)
+  const pointerDown = useRef(false)
+  const longPress = useRef(false)
+  const suppressClick = useRef(false)
+
+  const clearTimer = (): void => {
+    if (timer.current !== undefined) {
+      window.clearTimeout(timer.current)
+      timer.current = undefined
+    }
+  }
+
+  const releasePushToTalk = (): void => {
+    clearTimer()
+    pointerDown.current = false
+    if (longPress.current) {
+      longPress.current = false
+      endPushToTalk()
+    }
+  }
+
+  useEffect(() => {
+    window.addEventListener('blur', releasePushToTalk)
+    document.addEventListener('visibilitychange', releasePushToTalk)
+    return () => {
+      window.removeEventListener('blur', releasePushToTalk)
+      document.removeEventListener('visibilitychange', releasePushToTalk)
+      releasePushToTalk()
+    }
+  }, [])
 
   const toggle = async (): Promise<void> => {
     if (state === 'error' && activeSessionId !== undefined) {
@@ -52,6 +86,39 @@ export function VoiceControl({
   const interrupt = (): void => {
     try { interruptResponse() } catch { /* controller owns the visible connection state */ }
   }
+  const onPointerDown = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    pointerDown.current = true
+    longPress.current = false
+    suppressClick.current = false
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+    clearTimer()
+    timer.current = window.setTimeout(() => {
+      timer.current = undefined
+      if (!pointerDown.current) return
+      longPress.current = true
+      suppressClick.current = true
+      beginPushToTalk(sessionId)
+    }, 400)
+  }
+  const onPointerUp = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    releasePushToTalk()
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+  const onPointerCancel = (): void => {
+    releasePushToTalk()
+  }
+  const onClick = (): void => {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      return
+    }
+    void toggle()
+  }
   return (
     <span className={css.controls}>
       {state === 'speaking' && (
@@ -72,12 +139,17 @@ export function VoiceControl({
       <button
         type="button"
         className={`${css.button} ${active ? css.active : ''}`}
-        aria-label={label}
+        aria-label={pushToTalkActive ? t('control.pushToTalk') : label}
         aria-pressed={active ? inputMuted : undefined}
         title={label}
         data-state={state}
         data-muted={inputMuted}
-        onClick={() => { void toggle() }}
+        data-push-to-talk={pushToTalkActive}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onPointerCancel}
+        onClick={onClick}
       >
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
           <rect x="5" y="2" width="6" height="8" rx="3" fill="none" stroke="currentColor" strokeWidth="1.4" />

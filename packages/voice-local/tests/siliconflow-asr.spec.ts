@@ -126,6 +126,60 @@ describe('SiliconFlow cloud ASR', () => {
     await backend.close()
   })
 
+  it('holds a push-to-talk utterance through long pauses until commit', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => (
+      new Response(JSON.stringify({ text: '按住说话结果' }), { status: 200 })
+    ))
+    const backend = new NodeSpeechBackend({
+      apiKey: 'test-key', endpoint: 'https://example.test/asr', model: 'test-model',
+      requestTimeoutMs: 1_000, inputSampleRate: 16_000, outputSampleRate: 48_000,
+      ttsRate: '+20%', silenceDurationMs: 400, speechThreshold: 0.01, preRollMs: 200,
+      trailingSilenceMs: 100, maxUtteranceMs: 5_000, minSpeechDurationMs: 200, fetch,
+    })
+    const events: SpeechBackendEvent[] = []
+    await backend.start(event => events.push(event))
+    backend.beginManualUtterance()
+    backend.appendAudio(pcmFrame(0.2, 200))
+    backend.appendAudio(pcmFrame(0, 600))
+    await Promise.resolve()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(events.filter(event => event.type === 'transcription.completed')).toHaveLength(0)
+
+    backend.commitAudio()
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledOnce()
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'transcription.completed', text: '按住说话结果' }),
+      ]))
+    })
+    await backend.close()
+  })
+
+  it('clears an automatic candidate when push-to-talk starts and ignores empty commits', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => (
+      new Response(JSON.stringify({ text: '不应包含残留' }), { status: 200 })
+    ))
+    const backend = new NodeSpeechBackend({
+      apiKey: 'test-key', endpoint: 'https://example.test/asr', model: 'test-model',
+      requestTimeoutMs: 1_000, inputSampleRate: 16_000, outputSampleRate: 48_000,
+      ttsRate: '+20%', silenceDurationMs: 400, speechThreshold: 0.01, preRollMs: 200,
+      trailingSilenceMs: 100, maxUtteranceMs: 5_000, minSpeechDurationMs: 200, fetch,
+    })
+    const events: SpeechBackendEvent[] = []
+    await backend.start(event => events.push(event))
+    backend.appendAudio(pcmFrame(0.2, 200))
+    backend.beginManualUtterance()
+    backend.appendAudio(pcmFrame(0, 2_000))
+    backend.commitAudio()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(events.filter(event => (
+      event.type === 'transcription.completed' || event.type === 'transcription.failed'
+    ))).toEqual([])
+    await backend.close()
+  })
+
   it('passes the configured relative speech rate to Edge TTS', async () => {
     const backend = new NodeSpeechBackend({
       apiKey: 'test-key', endpoint: 'https://example.test/asr', model: 'test-model',

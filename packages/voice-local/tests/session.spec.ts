@@ -8,6 +8,7 @@ class MemoryBackend implements SpeechBackend {
   emit: ((event: SpeechBackendEvent) => void) | undefined
   readonly synthesize = vi.fn<(responseId: string, text: string) => void>()
   readonly interrupt = vi.fn()
+  readonly beginManualUtterance = vi.fn()
   start = vi.fn(async (emit: (event: SpeechBackendEvent) => void) => { this.emit = emit; emit({ type: 'ready' }) })
   appendAudio = vi.fn()
   commitAudio = vi.fn()

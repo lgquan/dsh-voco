@@ -89,7 +89,7 @@ An already inherited environment variable takes precedence, followed by the DSH 
 1. Run `dsh web` and open the DSH Web UI.
 2. Create or select a session.
 3. Click the microphone and grant browser permission.
-4. Speak naturally. About 1.5 seconds of continuous silence ends an utterance and sends it to cloud recognition.
+4. Speak naturally. About 1.5 seconds of continuous silence ends an utterance and sends it to cloud recognition. You can also hold the microphone for about 400 ms to use push-to-talk; release it to submit only that utterance. A disconnected session stays muted after a push-to-talk submission so its spoken reply can arrive.
 5. Ordinary conversation is handled in the frontend; work that needs project files, Shell, or other tools is delegated to the background Agent.
 
 Voice sessions support interruption, reconnects, and history restoration. Each Voice Session keeps its own background Agent Session binding. When the context rotation threshold is reached, Voco creates a new child session for later tasks while keeping it under the same Voice Session.

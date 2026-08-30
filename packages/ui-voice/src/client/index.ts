@@ -136,6 +136,8 @@ export function apply(ctx: ClientContext): void {
       const sessionId = controller.getSnapshot().sessionId
       if (sessionId !== undefined) history.record(sessionId)
     },
+    beginPushToTalk: (sessionId) => { controller.beginPushToTalk(sessionId) },
+    endPushToTalk: () => { controller.endPushToTalk() },
     interruptResponse: () => { controller.interruptResponse() },
     setVoiceMuted: (muted) => { controller.setInputMuted(muted) },
   })

@@ -42,6 +42,7 @@ export class LocalSession implements VoiceProviderSession {
   }
 
   async start(): Promise<void> { await this.backend.start(event => this.receive(event)) }
+  beginManualUtterance(): void { this.backend.beginManualUtterance() }
   appendAudio(audio: Uint8Array): void { this.backend.appendAudio(audio) }
   commitAudio(): void { this.backend.commitAudio() }
   interruptResponse(): void {

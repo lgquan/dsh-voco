@@ -48,8 +48,8 @@ voice 能力层 ---- voice-local ---- SiliconFlow ASR / Edge TTS
 
 ## 输入与路由流程
 
-1. `VoiceControl` 为当前选中的来源 Session 启动语音控制器。第一次点击麦克风进入语音，之后点击同一个按钮切换静音。
-2. 浏览器只做轻量音量检测，把语音片段封装为 WAV，通过 `voice-web` 发送。
+1. `VoiceControl` 为当前选中的来源 Session 启动语音控制器。第一次点击麦克风进入语音，之后点击同一个按钮切换静音；按住约 400 ms 则进入严格 PTT，松手发送当前片段。
+2. 浏览器通过 `voice-web` 发送 16 kHz PCM。PTT 开始时发送 `audio.push-to-talk.start`，服务端暂时关闭 VAD 自动提交；松手再发送 `audio.commit`。
 3. `voice-local` 完成转写。有效文本会作为持久化 Voice utterance 写入来源 Session；纯静音和空转写不会中断正在播放的回复。
 4. `voice-assistant` 将语音文本与最近对话、可选 Workspace 记忆组合，选择直接聊天、确定性的轻工具或后台委派。
 5. 委派前，前台把省略指代重写成自包含的“当前任务”，并将前置背景和用户原话分开传给后台，避免“你帮我看呀”这类短句失去上下文。
@@ -65,7 +65,7 @@ voice 能力层 ---- voice-local ---- SiliconFlow ASR / Edge TTS
 
 `packages/ui-voice/src/client/index.ts` 注册以下 DSH UI slots：
 
-- `conversation.input.right`：麦克风按钮和静音切换；AI 播放时额外显示打断播放按钮。
+- `conversation.input.right`：麦克风按钮、静音切换和 400 ms 长按 PTT；AI 播放时额外显示打断播放按钮。
 - `shell.overlay`：活动语音状态/控制，以及侧栏语音父会话标识和可折叠子会话装饰器。
 - `conversation.chat.node`：语音 utterance 和委派任务卡片。
 

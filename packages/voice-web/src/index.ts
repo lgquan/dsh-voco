@@ -102,7 +102,8 @@ async function attach(ctx: Context, socket: WebSocket, rawUrl: string): Promise<
       try { control = JSON.parse(text) } catch { state.finalClose = true; socket.close(1008, 'invalid control frame'); return }
       if (control === null || typeof control !== 'object') { state.finalClose = true; socket.close(1008, 'invalid control frame'); return }
       const type = (control as Record<string, unknown>).type
-      if (type === 'audio.commit') voice.commitAudio(session.id)
+      if (type === 'audio.push-to-talk.start') voice.beginManualUtterance(session.id)
+      else if (type === 'audio.commit') voice.commitAudio(session.id)
       else if (type === 'response.interrupt') voice.interruptResponse(session.id)
       else if (type === 'playback.ended') voice.playbackEnded(session.id)
       else if (type === 'task.cancel') {

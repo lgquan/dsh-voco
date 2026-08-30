@@ -242,6 +242,8 @@ export type VoiceEvent = VoiceProviderEvent | { readonly type: 'task.observation
 export interface VoiceProviderSession {
   readonly audio: VoiceAudioProfile
   readonly interactionMode: VoiceInteractionMode
+  /** Begin a manually committed push-to-talk utterance. */
+  beginManualUtterance(): void
   appendAudio(audio: Uint8Array): void
   commitAudio(): void
   interruptResponse(): void

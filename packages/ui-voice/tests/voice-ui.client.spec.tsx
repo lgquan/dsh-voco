@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   ChatConversationViewNode, ClientContext, ConversationEventInput, ConversationNodeDefinition,
@@ -238,7 +238,7 @@ describe('Voice Conversation Definitions', () => {
 })
 
 function voiceSnapshot(overrides: Partial<VoiceClientSnapshot> = {}): VoiceClientSnapshot {
-  return { state: 'off', inputMuted: false, textById: {}, ...overrides }
+  return { state: 'off', inputMuted: false, pushToTalkActive: false, textById: {}, ...overrides }
 }
 
 function listState(ids: SessionId[] = [VOICE_SESSION]): SessionListState {
@@ -812,12 +812,50 @@ describe('Voice UI surfaces', () => {
     expect(startVoice).toHaveBeenLastCalledWith(VOICE_SESSION)
   })
 
+  it('distinguishes a long press from a click and releases push-to-talk safely', () => {
+    vi.useFakeTimers()
+    const beginPushToTalk = vi.fn()
+    const endPushToTalk = vi.fn()
+    const startVoice = vi.fn().mockResolvedValue(undefined)
+    render(<VoiceControl {...(runtimeProps() as unknown as VoiceControlProps)}
+      useVoice={selector => selector(voiceSnapshot())}
+      startVoice={startVoice}
+      retryVoice={vi.fn().mockResolvedValue(undefined)}
+      beginPushToTalk={beginPushToTalk}
+      endPushToTalk={endPushToTalk}
+      interruptResponse={vi.fn()}
+      setVoiceMuted={vi.fn()}
+      t={zhT}
+    />)
+    const button = screen.getByRole('button', { name: '开始语音对话' })
+    fireEvent.pointerDown(button, { pointerId: 1, pointerType: 'mouse', button: 0 })
+    act(() => { vi.advanceTimersByTime(399) })
+    expect(beginPushToTalk).not.toHaveBeenCalled()
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(beginPushToTalk).toHaveBeenCalledWith(VOICE_SESSION)
+    fireEvent.pointerUp(button, { pointerId: 1, pointerType: 'mouse', button: 0 })
+    expect(endPushToTalk).toHaveBeenCalledOnce()
+    fireEvent.click(button)
+    expect(startVoice).not.toHaveBeenCalled()
+
+    fireEvent.pointerDown(button, { pointerId: 2, pointerType: 'mouse', button: 0 })
+    fireEvent.pointerCancel(button, { pointerId: 2, pointerType: 'mouse', button: 0 })
+    expect(endPushToTalk).toHaveBeenCalledTimes(1)
+
+    fireEvent.pointerDown(button, { pointerId: 3, pointerType: 'mouse', button: 0 })
+    act(() => { vi.advanceTimersByTime(400) })
+    fireEvent.blur(window)
+    expect(endPushToTalk).toHaveBeenCalledTimes(2)
+  })
+
   it('renders the same surfaces through the English dictionary', () => {
     const startVoice = vi.fn().mockResolvedValue(undefined)
     render(<VoiceControl {...(runtimeProps() as unknown as VoiceControlProps)} t={enT}
       useVoice={selector => selector(voiceSnapshot())}
       startVoice={startVoice}
       retryVoice={vi.fn().mockResolvedValue(undefined)}
+      beginPushToTalk={vi.fn()}
+      endPushToTalk={vi.fn()}
       interruptResponse={vi.fn()}
       setVoiceMuted={vi.fn()}
     />)

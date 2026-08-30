@@ -197,6 +197,8 @@ export class VoiceRuntime extends Service {
    * @param audio - PCM bytes.
    */
   appendAudio(id: VoiceSessionId, audio: Uint8Array): void { this.requireAttachedSession(id).provider.appendAudio(audio) }
+  /** Begin a manually committed push-to-talk utterance. */
+  beginManualUtterance(id: VoiceSessionId): void { this.requireAttachedSession(id).provider.beginManualUtterance() }
   /**
    * Commit current microphone input.
    * @param id - voice session.

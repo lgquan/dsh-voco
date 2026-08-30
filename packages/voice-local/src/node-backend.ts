@@ -41,6 +41,8 @@ export class NodeSpeechBackend implements SpeechBackend {
   private readonly preRoll: Uint8Array[] = []
   private preRollBytes = 0
   private active: ActiveUtterance | undefined
+  private manual = false
+  private manualMaxed = false
   private recognitionQueue: Promise<void> = Promise.resolve()
   private synthesisQueue: Promise<void> = Promise.resolve()
   private synthesisGeneration = 0
@@ -70,8 +72,17 @@ export class NodeSpeechBackend implements SpeechBackend {
     return Promise.resolve()
   }
 
+  beginManualUtterance(): void {
+    if (this.closed) return
+    this.active = undefined
+    this.preRoll.splice(0)
+    this.preRollBytes = 0
+    this.manual = true
+    this.manualMaxed = false
+  }
+
   appendAudio(audio: Uint8Array): void {
-    if (this.closed || audio.byteLength === 0) return
+    if (this.closed || audio.byteLength === 0 || this.manualMaxed) return
     if (audio.byteLength % 2 !== 0) {
       this.emit?.({ type: 'error', message: 'microphone PCM16 frame has an odd byte length' })
       return
@@ -95,15 +106,22 @@ export class NodeSpeechBackend implements SpeechBackend {
     } else {
       this.active.silenceBytes += frame.byteLength
     }
-    if (!this.active.confirmed && this.active.silenceBytes >= this.bytesFor(this.config.minSpeechDurationMs ?? 250)) {
+    if (!this.manual && !this.active.confirmed && this.active.silenceBytes >= this.bytesFor(this.config.minSpeechDurationMs ?? 250)) {
       this.active = undefined
       return
     }
-    if (this.active.silenceBytes >= this.bytesFor(this.config.silenceDurationMs)
-      || this.active.totalBytes >= this.bytesFor(this.config.maxUtteranceMs)) this.finishUtterance()
+    if ((!this.manual && this.active.silenceBytes >= this.bytesFor(this.config.silenceDurationMs))
+      || this.active.totalBytes >= this.bytesFor(this.config.maxUtteranceMs)) {
+      this.finishUtterance()
+      if (this.manual) this.manualMaxed = true
+    }
   }
 
-  commitAudio(): void { this.finishUtterance() }
+  commitAudio(): void {
+    this.finishUtterance()
+    this.manual = false
+    this.manualMaxed = false
+  }
 
   synthesize(responseId: string, text: string): void {
     const generation = this.synthesisGeneration
@@ -151,6 +169,8 @@ export class NodeSpeechBackend implements SpeechBackend {
     this.synthesisGeneration += 1
     this.synthesisResponses.clear()
     this.active = undefined
+    this.manual = false
+    this.manualMaxed = false
     this.preRoll.splice(0)
     await Promise.allSettled([this.recognitionQueue, this.synthesisQueue])
     this.emit?.({ type: 'closed', reason: 'SiliconFlow speech backend closed' })

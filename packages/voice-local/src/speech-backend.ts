@@ -16,6 +16,8 @@ export type SpeechBackendEvent =
 export interface SpeechBackend {
   readonly audio: VoiceAudioProfile
   start(emit: (event: SpeechBackendEvent) => void): Promise<void>
+  /** Begin a manually committed utterance and suspend VAD auto-finalization. */
+  beginManualUtterance(): void
   appendAudio(audio: Uint8Array): void
   commitAudio(): void
   synthesize(responseId: string, text: string): void

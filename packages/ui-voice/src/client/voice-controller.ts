@@ -12,6 +12,7 @@ export interface VoiceLiveText {
 export interface VoiceClientSnapshot {
   readonly state: VoiceClientState
   readonly inputMuted: boolean
+  readonly pushToTalkActive: boolean
   readonly sessionId?: SessionId
   readonly textById: Readonly<Record<string, VoiceLiveText>>
 }
@@ -19,8 +20,10 @@ export interface VoiceClientSnapshot {
 interface VoiceTransport {
   close(): Promise<void>
   cancelTask(taskId: string): void
+  beginManualUtterance(): void
+  commitAudio(): void
   interruptResponse(): void
-  setInputMuted(muted: boolean): void
+  setInputMuted(muted: boolean, commit?: boolean): void
   submitText(text: string): void
 }
 
@@ -47,7 +50,11 @@ interface VoiceReadyEvent {
   readonly interactionMode: 'speech-shell' | 'frontend-agent'
 }
 
-const INITIAL_SNAPSHOT: VoiceClientSnapshot = { state: 'off', inputMuted: false, textById: {} }
+const INITIAL_SNAPSHOT: VoiceClientSnapshot = {
+  state: 'off', inputMuted: false, pushToTalkActive: false, textById: {},
+}
+
+type PushToTalkOrigin = 'off' | 'hands-free' | 'muted'
 
 /** Own the single browser microphone, provider WebSocket, playback queue, and live transcript feed. */
 export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> {
@@ -61,6 +68,9 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
   private readonly pendingText: string[] = []
   private readonly onConversationStarted: ((sessionId: SessionId) => void) | undefined
   private conversationStarted = false
+  private pushToTalkOrigin: PushToTalkOrigin | undefined
+  private pushToTalkPending = false
+  private pushToTalkActive = false
 
   constructor(options: VoiceControllerOptions = {}) {
     this.onConversationStarted = options.onConversationStarted
@@ -83,6 +93,89 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
     await this.open(sessionId, false)
   }
 
+  /** Begin a temporary manually committed utterance after a long press. */
+  beginPushToTalk(sessionId: SessionId): void {
+    if (this.pushToTalkPending || this.pushToTalkActive) return
+    const state = this.snapshot.state
+    if (state === 'off') {
+      this.pushToTalkOrigin = 'off'
+      this.pushToTalkPending = true
+      void this.open(sessionId, true).catch(() => {})
+      return
+    }
+    if (state === 'error') {
+      const activeSessionId = this.snapshot.sessionId
+      if (activeSessionId === undefined) return
+      this.pushToTalkOrigin = this.snapshot.inputMuted ? 'muted' : 'hands-free'
+      this.pushToTalkPending = true
+      void this.open(activeSessionId, true).catch(() => {})
+      return
+    }
+    this.pushToTalkOrigin = this.snapshot.inputMuted ? 'muted' : 'hands-free'
+    this.pushToTalkPending = true
+    if (state === 'connecting') this.setInputMutedWithoutCommit(true)
+    this.activatePushToTalk()
+  }
+
+  /** Finish or cancel the temporary manually committed utterance. */
+  endPushToTalk(): void {
+    if (!this.pushToTalkPending && !this.pushToTalkActive) return
+    if (!this.pushToTalkActive) {
+      this.pushToTalkPending = false
+      this.restorePendingInputState()
+      return
+    }
+    const transport = this.transport
+    if (transport === undefined) {
+      this.pushToTalkActive = false
+      this.pushToTalkPending = false
+      this.publish({ ...this.snapshot, pushToTalkActive: false })
+      return
+    }
+    const origin = this.pushToTalkOrigin
+    const restoreMuted = origin === 'off' || origin === 'muted'
+    try {
+      transport.commitAudio()
+      transport.setInputMuted(restoreMuted, false)
+    } catch {
+      this.handleUnexpectedClose()
+      return
+    }
+    this.pushToTalkActive = false
+    this.pushToTalkPending = false
+    this.pushToTalkOrigin = undefined
+    this.publish({ ...this.snapshot, inputMuted: restoreMuted, pushToTalkActive: false })
+  }
+
+  private activatePushToTalk(): void {
+    if (!this.pushToTalkPending || this.pushToTalkActive || this.transport === undefined) return
+    try {
+      this.transport.setInputMuted(false, false)
+      this.transport.beginManualUtterance()
+    } catch {
+      this.handleUnexpectedClose()
+      return
+    }
+    this.pushToTalkActive = true
+    this.publish({ ...this.snapshot, inputMuted: false, pushToTalkActive: true })
+  }
+
+  private restorePendingInputState(): void {
+    const origin = this.pushToTalkOrigin
+    if (origin === undefined) return
+    const restoreMuted = origin === 'off' || origin === 'muted'
+    const transport = this.transport ?? this.openingTransport
+    transport?.setInputMuted(restoreMuted, false)
+    this.pushToTalkOrigin = undefined
+    this.publish({ ...this.snapshot, inputMuted: restoreMuted, pushToTalkActive: false })
+  }
+
+  private setInputMutedWithoutCommit(muted: boolean): void {
+    this.openingTransport?.setInputMuted(muted, false)
+    this.transport?.setInputMuted(muted, false)
+    if (this.snapshot.inputMuted !== muted) this.publish({ ...this.snapshot, inputMuted: muted })
+  }
+
   private async open(sessionId: SessionId, inputMuted: boolean): Promise<void> {
     const generation = ++this.generation
     this.pendingText.splice(0)
@@ -97,7 +190,7 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
     }
     const openingAbort = new AbortController()
     this.openingAbort = openingAbort
-    this.publish({ state: 'connecting', inputMuted, sessionId, textById: {} })
+    this.publish({ state: 'connecting', inputMuted, pushToTalkActive: false, sessionId, textById: {} })
     try {
       const transport = await openVoiceTransport(String(sessionId), {
         onBinary: () => { this.setState('speaking') },
@@ -118,7 +211,8 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
       this.openingTransport = undefined
       this.transport = transport
       for (const text of this.pendingText.splice(0)) transport.submitText(text)
-      this.setState('listening')
+      if (this.pushToTalkPending) this.activatePushToTalk()
+      if (this.snapshot.state !== 'error') this.setState('listening')
     } catch (cause) {
       if (generation !== this.generation) return
       this.setState('error')
@@ -183,6 +277,9 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
     this.openingAbort = undefined
     this.publish(INITIAL_SNAPSHOT)
     this.pendingText.splice(0)
+    this.pushToTalkPending = false
+    this.pushToTalkActive = false
+    this.pushToTalkOrigin = undefined
     await this.closeTransport()
   }
 
@@ -206,6 +303,12 @@ export class VoiceController implements ObservableSnapshot<VoiceClientSnapshot> 
 
   private handleUnexpectedClose(): void {
     this.openingAbort?.abort()
+    this.pushToTalkPending = false
+    this.pushToTalkActive = false
+    this.pushToTalkOrigin = undefined
+    if (this.snapshot.pushToTalkActive) {
+      this.publish({ ...this.snapshot, pushToTalkActive: false })
+    }
     this.setState('error')
     void this.closeTransport().catch((cause: unknown) => {
       console.error('voice transport cleanup failed:', cause)
@@ -347,6 +450,14 @@ async function openVoiceTransport(
   const playing = new Set<AudioBufferSourceNode>()
 
   const transport: VoiceTransport = {
+    beginManualUtterance: () => {
+      if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
+      socket.send(JSON.stringify({ type: 'audio.push-to-talk.start' }))
+    },
+    commitAudio: () => {
+      if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
+      socket.send(JSON.stringify({ type: 'audio.commit' }))
+    },
     cancelTask: (taskId) => {
       if (socket.readyState !== WebSocket.OPEN) throw new Error('voice transport is not open')
       socket.send(JSON.stringify({ type: 'task.cancel', taskId }))
@@ -356,12 +467,12 @@ async function openVoiceTransport(
       socket.send(JSON.stringify({ type: 'response.interrupt' }))
       stopPlayback()
     },
-    setInputMuted: (muted) => {
+    setInputMuted: (muted, commit = true) => {
       if (inputMuted === muted) return
       inputMuted = muted
       chunks.splice(0)
       for (const track of stream?.getTracks() ?? []) track.enabled = !muted
-      if (muted && !stopped && socket.readyState === WebSocket.OPEN) {
+      if (muted && commit && !stopped && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'audio.commit' }))
       }
     },

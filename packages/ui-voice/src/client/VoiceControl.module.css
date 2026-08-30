@@ -6,6 +6,7 @@
   width: 28px;
   height: 28px;
   padding: 0;
+  touch-action: manipulation;
   border: 0;
   border-radius: 8px;
   color: var(--dsw-alias-label-secondary);
@@ -17,6 +18,11 @@
 .button[data-muted='true'] {
   color: var(--dsw-alias-state-error-primary);
   background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.button[data-push-to-talk='true'] {
+  color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  transform: scale(.94);
 }
 .interruptButton { color: var(--dsw-alias-state-error-primary); }
 .interruptButton:hover { color: var(--dsw-alias-state-error-primary); }

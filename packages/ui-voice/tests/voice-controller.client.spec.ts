@@ -180,7 +180,7 @@ describe('VoiceController', () => {
     expect(socket.sent.some(value => value instanceof ArrayBuffer)).toBe(true)
 
     await controller.stop()
-    expect(controller.getSnapshot()).toEqual({ state: 'off', inputMuted: false, textById: {} })
+    expect(controller.getSnapshot()).toEqual({ state: 'off', inputMuted: false, pushToTalkActive: false, textById: {} })
   })
 
   it('interrupts active playback without ending the Voice Session', async () => {
@@ -196,6 +196,50 @@ describe('VoiceController', () => {
     expect(source.stop).toHaveBeenCalledTimes(1)
     expect(controller.getSnapshot()).toMatchObject({ state: 'listening', sessionId: SESSION, inputMuted: false })
     expect(socket.sent).not.toContain(JSON.stringify({ type: 'session.close' }))
+    await controller.stop()
+  })
+
+  it('uses a single manual commit for push-to-talk and restores hands-free input', async () => {
+    const controller = new VoiceController()
+    const socket = await start(controller)
+    const before = socket.sent.length
+
+    controller.beginPushToTalk(SESSION)
+    expect(socket.sent.slice(before)).toEqual([
+      JSON.stringify({ type: 'audio.push-to-talk.start' }),
+    ])
+    expect(controller.getSnapshot()).toMatchObject({
+      pushToTalkActive: true, inputMuted: false, state: 'listening',
+    })
+
+    controller.endPushToTalk()
+    expect(socket.sent.slice(before)).toEqual([
+      JSON.stringify({ type: 'audio.push-to-talk.start' }),
+      JSON.stringify({ type: 'audio.commit' }),
+    ])
+    expect(controller.getSnapshot()).toMatchObject({ pushToTalkActive: false, inputMuted: false })
+    controller.endPushToTalk()
+    expect(socket.sent.slice(before)).toHaveLength(2)
+    await controller.stop()
+  })
+
+  it('temporarily unmutes a muted session and restores mute without a duplicate commit', async () => {
+    const controller = new VoiceController()
+    const socket = await start(controller)
+    controller.setInputMuted(true)
+    const before = socket.sent.length
+
+    controller.beginPushToTalk(SESSION)
+    expect(controller.getSnapshot()).toMatchObject({ pushToTalkActive: true, inputMuted: false })
+    expect(track.enabled).toBe(true)
+    controller.endPushToTalk()
+
+    expect(socket.sent.slice(before)).toEqual([
+      JSON.stringify({ type: 'audio.push-to-talk.start' }),
+      JSON.stringify({ type: 'audio.commit' }),
+    ])
+    expect(controller.getSnapshot()).toMatchObject({ pushToTalkActive: false, inputMuted: true })
+    expect(track.enabled).toBe(false)
     await controller.stop()
   })
 
@@ -656,7 +700,7 @@ describe('VoiceController', () => {
     dispose()
     await controller.stop()
     expect(socket.sent).toContain(JSON.stringify({ type: 'session.close' }))
-    expect(controller.getSnapshot()).toEqual({ state: 'off', inputMuted: false, textById: {} })
+    expect(controller.getSnapshot()).toEqual({ state: 'off', inputMuted: false, pushToTalkActive: false, textById: {} })
     expect(track.stop).toHaveBeenCalledTimes(1)
     expect(contexts.every(context => context.close.mock.calls.length === 1)).toBe(true)
   })

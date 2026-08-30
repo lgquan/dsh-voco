@@ -36,6 +36,7 @@ afterEach(async () => {
 function providerConnection(emit: (event: VoiceProviderEvent) => void): ProviderConnection {
   const spies = {
     appendAudio: vi.fn(),
+    beginManualUtterance: vi.fn(),
     commitAudio: vi.fn(),
     interruptResponse: vi.fn(),
     playbackEnded: vi.fn(),
@@ -47,6 +48,7 @@ function providerConnection(emit: (event: VoiceProviderEvent) => void): Provider
     session: {
       audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
       interactionMode: 'frontend-agent',
+      beginManualUtterance: spies.beginManualUtterance,
       appendAudio: spies.appendAudio,
       commitAudio: spies.commitAudio,
       interruptResponse: spies.interruptResponse,
@@ -159,12 +161,14 @@ describe('voice WebSocket carrier', () => {
     })
 
     socket.send(Buffer.from([1, 2, 3]), { binary: true })
+    socket.send(JSON.stringify({ type: 'audio.push-to-talk.start' }))
     socket.send(JSON.stringify({ type: 'audio.commit' }))
     socket.send(JSON.stringify({ type: 'response.interrupt' }))
     socket.send(JSON.stringify({ type: 'playback.ended' }))
     socket.send(JSON.stringify({ type: 'task.cancel', taskId: 'task-from-browser' }))
     await vi.waitFor(() => {
       expect(connection.spies.appendAudio).toHaveBeenCalledWith(Buffer.from([1, 2, 3]))
+      expect(connection.spies.beginManualUtterance).toHaveBeenCalledOnce()
       expect(connection.spies.commitAudio).toHaveBeenCalledOnce()
       expect(connection.spies.interruptResponse).toHaveBeenCalledOnce()
       expect(connection.spies.playbackEnded).toHaveBeenCalledOnce()
