@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
@@ -325,6 +328,108 @@ describe('voice assistant driver', () => {
       })
     } finally {
       vi.useRealTimers()
+    }
+  })
+
+  it('grounds project facts before routing and hard-delegates when evidence is missing', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-voco-evidence-'))
+    const outside = await mkdtemp(join(tmpdir(), 'dsh-voco-outside-'))
+    try {
+      await writeFile(join(workspace, 'facts.md'), '# 项目规则链\n规则链共有三层：采集、筛选、复核。\n', 'utf8')
+      await writeFile(join(outside, 'secret.md'), 'OUTSIDE_SECRET：越界密钥不应被项目检索读取。\n', 'utf8')
+      await symlink(outside, join(workspace, 'linked-outside'), process.platform === 'win32' ? 'junction' : 'dir')
+      const ctx = new Context()
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(LlmRuntime)
+      const prompts: string[] = []
+      class RouteAdapter extends LlmAdapter {
+        async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+          prompts.push(options.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('') ?? '')
+          yield { type: 'text-delta', index: 0, text: '{"action":"chat","reply":"基于项目资料回答。"}' }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        }
+      }
+      ctx.llm.registerAdapter(['test'], new RouteAdapter())
+      const createdAgents = installAgentFactory(ctx)
+      await ctx.plugin(AgentDefaultModel, { provider: 'test', model: 'test' })
+      await ctx.plugin(SystemPrompt)
+      await ctx.plugin(ToolRuntime)
+      await ctx.plugin(VoiceRuntime, { provider: 'test' })
+      const displayed: string[] = []
+      const completions: TaskCommandResult[] = []
+      let pendingSpeech = ''
+      let emit: ((event: VoiceProviderEvent) => void) | undefined
+      const providerSession: VoiceProviderSession = {
+        audio: { inputSampleRate: 16_000, outputSampleRate: 24_000, format: 'pcm_s16le' },
+        interactionMode: 'frontend-agent',
+        appendAudio: () => {}, commitAudio: () => {}, interruptResponse: () => {}, playbackEnded: () => {},
+        appendTaskObservation: () => {},
+        appendSpeechText: text => { pendingSpeech += text; return true },
+        requestResponse: () => { if (pendingSpeech !== '') { displayed.push(pendingSpeech); pendingSpeech = '' } },
+        completeTaskCommand: (_id, result) => { completions.push(result) },
+        close: () => Promise.resolve(),
+      }
+      ctx.voice.registerProvider({
+        id: 'test', available: () => true,
+        connect: input => { emit = input.emit; return Promise.resolve(providerSession) },
+      })
+      const source = ctx.sessions.create(SessionId('voice-evidence'), { meta: { cwd: workspace } })
+      source.append('request/header', { header: { cwd: workspace, config: { provider: 'test', model: 'test' } } })
+      const sourceAgent = {
+        id: source.id,
+        options: { provider: 'test', model: 'test' },
+        session: source,
+        inbox: {} as Agent['inbox'],
+        status: 'idle' as const,
+        ctx,
+        cancel: vi.fn(),
+        whenIdle: () => Promise.resolve(),
+        runMaintenance: () => Promise.reject(new Error('not used')),
+        send: () => {}, steer: vi.fn(), inject: () => {}, followup: vi.fn(),
+      } satisfies Agent
+      ctx.agents.register(sourceAgent)
+      await ctx.plugin({ apply, inject }, { evidenceSearchTimeoutMs: 500 })
+      await ctx.voice.open(source.id)
+
+      emit?.({ type: 'task.command', call: {
+        id: VoiceCommandCallId('evidence-hit'),
+        command: { type: 'route_transcription', input: '这个项目的规则链有几层？' },
+      } })
+      await vi.waitFor(() => { expect(displayed).toContain('基于项目资料回答。') })
+      expect(prompts.at(-1)).toContain('[当前文件] facts.md')
+      expect(prompts.at(-1)).toContain('1-2:')
+      expect(completions).toContainEqual({ kind: 'handled' })
+
+      await new Promise(resolve => setTimeout(resolve, 5))
+      await writeFile(join(workspace, 'facts.md'), '# 项目规则链\n规则链现在调整为四层：采集、筛选、复核、归档。\n', 'utf8')
+      emit?.({ type: 'task.command', call: {
+        id: VoiceCommandCallId('evidence-refresh'),
+        command: { type: 'route_transcription', input: '这个项目的规则链有几层？' },
+      } })
+      await vi.waitFor(() => { expect(displayed.filter(text => text === '基于项目资料回答。')).toHaveLength(2) })
+      expect(prompts.at(-1)).toContain('现在调整为四层')
+
+      await mkdir(join(workspace, 'nested'))
+      await writeFile(join(workspace, 'nested', 'rules.md'), '# 规则链补充\n规则链的第四层归档会保存最终证据。\n', 'utf8')
+      emit?.({ type: 'task.command', call: {
+        id: VoiceCommandCallId('evidence-new-file'),
+        command: { type: 'route_transcription', input: '这个项目的规则链有几层？' },
+      } })
+      await vi.waitFor(() => { expect(displayed.filter(text => text === '基于项目资料回答。')).toHaveLength(3) })
+      expect(prompts.at(-1)).toContain('[当前文件] nested/rules.md')
+
+      emit?.({ type: 'task.command', call: {
+        id: VoiceCommandCallId('evidence-miss'),
+        command: { type: 'route_transcription', input: '这个项目的越界密钥是什么？' },
+      } })
+      await vi.waitFor(() => { expect(createdAgents).toHaveLength(1) })
+      expect(prompts.at(-1)).not.toContain('OUTSIDE_SECRET')
+      expect(displayed.at(-1)).toBe('我看看。')
+      expect(completions.at(-1)).toMatchObject({ kind: 'accepted' })
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
     }
   })
 
