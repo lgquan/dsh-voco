@@ -185,12 +185,18 @@ interface WorkspaceMemoryContext {
   readonly matches: readonly { readonly id: string; readonly content: string }[]
 }
 
+interface WorkspaceMemoryMessage {
+  readonly id: string
+  readonly role: 'user' | 'assistant'
+  readonly text: string
+}
+
 interface WorkspaceMemoryLike {
   recall(input: { readonly sessionId: SessionId; readonly query: string; readonly maxBytes?: number }): Promise<WorkspaceMemoryContext>
   checkpoint(input: {
     readonly sessionId: SessionId
-    readonly messages: readonly { readonly id: string; readonly role: 'user' | 'assistant'; readonly text: string }[]
-    readonly reason: 'segment-end' | 'session-close'
+    readonly messages: readonly WorkspaceMemoryMessage[]
+    readonly reason: 'segment-end' | 'task-end' | 'session-close'
     readonly force?: boolean
   }): Promise<{ readonly status: 'buffered' | 'empty' | 'committed' | 'failed' }>
 }
@@ -1546,6 +1552,24 @@ export function apply(ctx: Context, config: Config = {}): void {
       })
   }
 
+  const submitTaskMemory = (task: ActiveTask): void => {
+    if (task.interactionMode !== 'frontend-agent') return
+    const memory = optionalWorkspaceMemory(ctx)
+    if (memory === undefined) return
+    const request = task.requestText.trim()
+    const result = (task.completionDetail ?? task.lastAssistantMessage?.text ?? '').trim()
+    const prefix = `voice-task:${String(task.id)}`
+    const messages: WorkspaceMemoryMessage[] = [
+      ...(request === '' ? [] : [{ id: `${prefix}:request`, role: 'user' as const, text: request }]),
+      ...(result === '' ? [] : [{ id: `${prefix}:result`, role: 'assistant' as const, text: result }]),
+    ]
+    if (messages.length === 0) return
+    void memory.checkpoint({ sessionId: task.taskSessionId, messages, reason: 'task-end' })
+      .catch((error: unknown) => {
+        ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      })
+  }
+
   // A frontend-agent voice conversation runs its text work in independent task
   // sessions, so its source session would otherwise carry no `turn/start` and be
   // treated as a reusable blank session by the workspace new-session flow. Mark
@@ -2132,6 +2156,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     try { hasLlm = ctx.get('llm') !== undefined } catch { hasLlm = false }
     const deliverAssistantSpeech = !hasLlm || !ctx.voice.supportsSpeechText(binding.voiceSessionId!)
     enqueue(binding, () => {
+      const terminalTask = event.type === 'turn/end'
+        && event.data.reason.kind === 'completed'
+        && binding.active?.taskTurn === event.data.turn
+        ? binding.active
+        : undefined
       if (observeSessionEvent(binding, event, append, config, (error) => {
         ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
       }, (task, text) => {
@@ -2141,6 +2170,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           void rewriteAndSpeak(binding, task.id, task.requestText, text)
         }
       }, deliverAssistantSpeech)) {
+        if (terminalTask !== undefined) submitTaskMemory(terminalTask)
         if ((config.taskSessionPolicy ?? 'isolated') === 'isolated') taskBindings.delete(session.id)
       }
     })

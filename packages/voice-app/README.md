@@ -29,10 +29,10 @@ dsh web
 GitHub Releases provide a prebuilt plugin package; no source checkout or pnpm installation is required:
 
 ```powershell
-dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.5/flowingspring-dsh-voco-0.3.5.tgz
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.6/flowingspring-dsh-voco-0.3.6.tgz
 ```
 
-Release page: [v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
+Release page: [v0.3.6](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.6)
 
 ## Configure the API key
 
@@ -84,7 +84,7 @@ Uninstalling does not delete DSH sessions or Voice history.
 - Edge TTS `zh-CN-XiaoxiaoNeural` voice responses.
 - Interruption, navigation, reconnects, and restored history.
 - Immediate acknowledgement before delegation; full reports remain in the DSH task UI.
-- Optional `@flowingspring/dsh-workspace-memory` integration.
+- Optional `@flowingspring/dsh-workspace-memory` integration for both the source Voice Session and every completed delegated child task.
 
 ## Troubleshooting
 

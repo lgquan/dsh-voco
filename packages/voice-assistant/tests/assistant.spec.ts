@@ -911,6 +911,13 @@ describe('voice assistant driver', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(VoiceRuntime, { provider: 'test' })
+    const checkpointMemory = vi.fn(async () => ({ status: 'committed' as const }))
+    class FakeWorkspaceMemory extends Service {
+      constructor(serviceCtx: Context) { super(serviceCtx, 'workspaceMemory') }
+      recall = vi.fn(async () => ({ scope: 'ws-test', summary: '', matches: [] }))
+      checkpoint = checkpointMemory
+    }
+    await ctx.plugin(FakeWorkspaceMemory)
 
     let emit: ((event: VoiceProviderEvent) => void) | undefined
     const providerSession: VoiceProviderSession = {
@@ -923,7 +930,7 @@ describe('voice assistant driver', () => {
       id: 'test', available: () => true,
       connect: input => { emit = input.emit; return Promise.resolve(providerSession) },
     })
-    const source = ctx.sessions.create(SessionId('voice-rotation'))
+    const source = ctx.sessions.create(SessionId('voice-rotation'), { meta: { cwd: 'C:\\workspace' } })
     const sourceAgent = {
       id: source.id,
       options: { provider: 'test', model: 'test' },
@@ -994,6 +1001,8 @@ describe('voice assistant driver', () => {
     })
     expect(second.session.header.parentSession).toBe(source.id)
     expect(second.session.header.origin).toBe('subagent')
+    expect(first.session.header.cwd).toBe(source.header.cwd)
+    expect(second.session.header.cwd).toBe(source.header.cwd)
     expect(ctx.sessions.get(first.session.id)).toBe(first.session)
     expect(ctx.agents.get(first.agent.id)).toBe(first.agent)
     const handoff = second.inject.mock.calls[0]?.[0]
@@ -1017,6 +1026,36 @@ describe('voice assistant driver', () => {
       status: 'queued',
     })
     expect(ctx.tokenMeter.measure).toHaveBeenCalledTimes(2)
+
+    const thirdMessage = second.followup.mock.calls[0]?.[0]
+    if (thirdMessage === undefined) throw new Error('third task message missing')
+    second.session.append('turn/start', { turn: 1 })
+    ctx.emit('agent/inbox/claimed', { agent: second.agent, message: thirdMessage, turn: 1 })
+    second.session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: '第三项工作已经完成。' }],
+        source: { provider: 'test', model: 'test' },
+      }),
+    }, { surfaceOp: 'append' })
+    second.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await settle()
+
+    const taskCheckpoints = checkpointMemory.mock.calls.map(call => call[0])
+      .filter(input => input.reason === 'task-end')
+    expect(taskCheckpoints).toHaveLength(3)
+    expect(taskCheckpoints.map(input => input.sessionId)).toEqual([
+      first.session.id,
+      first.session.id,
+      second.session.id,
+    ])
+    expect(taskCheckpoints.map(input => input.messages[0]?.text)).toEqual([
+      '先完成第一项工作',
+      '继续完成第二项工作',
+      '继续完成第三项工作',
+    ])
+    expect(taskCheckpoints[2]?.messages[1]?.text).toBe('第三项工作已经完成。')
   })
 
   it('lets a frontend voice Agent drive one exact text-Agent task', async () => {
@@ -1296,6 +1335,14 @@ describe('voice assistant driver', () => {
       voiceMessage: { text: '语音模块检查完成，相关测试全部通过。' },
     })
     expect(requestResponse).toHaveBeenCalledTimes(2)
+    expect(checkpointMemory).toHaveBeenCalledWith({
+      sessionId: firstTask.session.id,
+      reason: 'task-end',
+      messages: [
+        { id: `voice-task:${String(taskId)}:request`, role: 'user', text: '检查仓库并报告结果\n补充要求：只检查语音模块' },
+        { id: `voice-task:${String(taskId)}:result`, role: 'assistant', text: '语音模块检查完成，相关测试全部通过。' },
+      ],
+    })
 
     const loggedObservations = session.events.flatMap(event =>
       event.type === 'voice/task-observation' ? [event.data] : [])

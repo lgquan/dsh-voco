@@ -40,10 +40,10 @@ dsh web
 GitHub Release 提供和 npm 相同的预构建插件包，不需要 clone 源码或准备 pnpm 开发环境：
 
 ```powershell
-dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.5/flowingspring-dsh-voco-0.3.5.tgz
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.6/flowingspring-dsh-voco-0.3.6.tgz
 ```
 
-Release 页面：[v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
+Release 页面：[v0.3.6](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.6)
 
 无论选择哪种安装方式，最后都通过 DSH 启动 Web UI：
 
@@ -113,7 +113,7 @@ dsh plugin --profile web remove @flowingspring/dsh-voco
 - 语音、文字和后台 Agent 任务可以在同一 DSH 会话中协作。
 - 委派前即时播报确认语，完整报告保留在任务界面。
 - 页面切换、断线重连和 DSH 重启后恢复语音会话绑定。
-- 可选接入 `@flowingspring/dsh-workspace-memory`，为语音前台和后台 Agent 提供 Workspace 长期记忆。
+- 可选接入 `@flowingspring/dsh-workspace-memory`；语音主会话和每个完成的委派子任务都会进入同一个 Workspace 长期记忆范围。
 
 ## 常见问题
 
@@ -135,7 +135,7 @@ dsh plugin --profile web remove @flowingspring/dsh-voco
 
 ## 可选 Workspace Memory
 
-长期记忆不是 Voco 的必需依赖。需要时另外安装 `@flowingspring/dsh-workspace-memory`；只安装 Voco 也可以独立使用。Memory 插件的安装和配置请参阅其项目文档。
+长期记忆不是 Voco 的必需依赖。需要时另外安装 `@flowingspring/dsh-workspace-memory`；只安装 Voco 也可以独立使用。安装 Memory 后，完成的委派任务会提交用户原始请求和最终可见结果，不会提交 reasoning、工具日志或注入上下文。Memory 插件的安装和配置请参阅其项目文档。
 
 ## 开发与反馈
 

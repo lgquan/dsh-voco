@@ -29,10 +29,10 @@ dsh web
 GitHub Release 提供已经构建好的插件包，不需要下载源码或安装 pnpm：
 
 ```powershell
-dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.5/flowingspring-dsh-voco-0.3.5.tgz
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.6/flowingspring-dsh-voco-0.3.6.tgz
 ```
 
-Release 页面：[v0.3.5](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.5)
+Release 页面：[v0.3.6](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.6)
 
 ## 配置 API Key
 
@@ -84,7 +84,7 @@ dsh plugin --profile web remove @flowingspring/dsh-voco
 - Edge TTS `zh-CN-XiaoxiaoNeural` 语音回复。
 - 语音打断、页面切换、断线重连和历史恢复。
 - 委派前即时确认，完整报告保留在 DSH 任务界面。
-- 可选接入 `@flowingspring/dsh-workspace-memory` 长期记忆。
+- 可选接入 `@flowingspring/dsh-workspace-memory`，让语音主会话和每个完成的委派子任务共享同一 Workspace 长期记忆范围。
 
 ## 排查
 
