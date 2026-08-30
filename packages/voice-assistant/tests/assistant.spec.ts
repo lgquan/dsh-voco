@@ -160,6 +160,8 @@ describe('voice assistant driver', () => {
     expect(Date.now() - startedAt).toBeLessThan(150)
     expect(completions).toContainEqual({ kind: 'handled' })
     expect(routePrompts.at(-1)).toContain('Workspace 长期记忆：\n（无）')
+    expect(routePrompts.at(-1)).toContain('只有普通寒暄、日常对话，以及无需外部事实或工具就能可靠回答的稳定知识，才选择 chat')
+    expect(routePrompts.at(-1)).toContain('凡是需要搜索、查询、核实、最新信息，或涉及陌生、不确定、可能过时的术语和事实，一律选择 delegate')
   })
 
   it('uses a grounded local-time tool and delegates a context-resolved task', async () => {
@@ -659,7 +661,8 @@ describe('voice assistant driver', () => {
     )))
     const routePrompt = routeRequest?.messages[0]?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
     expect(routePrompt).toContain('acknowledgement')
-    expect(routePrompt).toContain('不要固定使用“好的”或其他相同开头')
+    expect(routePrompt).toContain('acknowledgement 尽量简短，通常不超过 16 个汉字')
+    expect(routePrompt).toContain('避免使用“核实”“确认”“具体含义”“相关内容”等书面化表达')
     expect(routePrompt).toContain('搜索、查询、核实、阅读和分析类任务默认只读')
     expect(routePrompt).toContain('不能声称任务已经完成')
   })
