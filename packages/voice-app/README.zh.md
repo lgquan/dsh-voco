@@ -5,52 +5,86 @@
 
 [English](README.md) | 中文
 
-面向 DSH Web UI 的可恢复、可打断语音对话插件。你可以自然说出需求、立即获得口语回复，并把需要工具的工作委派给持续复用的后台 Agent Session，而不会丢失任务上下文。
+面向 DeepSeek Harness（DSH）Web UI 的可恢复、可打断语音对话插件。它使用硅基流动云端语音识别和 Edge TTS，并把需要工具的工作委派给后台 Agent。
 
 ## 安装
 
-```sh
+### npm 安装（推荐）
+
+先安装 DSH CLI：
+
+```powershell
+npm install -g @deepseek-ai/dsh
+```
+
+将插件加入 Web profile 并启动：
+
+```powershell
 dsh plugin --profile web add @flowingspring/dsh-voco
 dsh web
 ```
 
-如果尚未安装 DSH 命令行：
+### GitHub 源码安装
 
-```sh
-npm install -g @deepseek-ai/dsh
+仓库根目录是 workspace，插件源码在 `packages/voice-app`。需要调试或修改源码时：
+
+```powershell
+git clone https://github.com/lgquan/dsh-voco.git
+cd dsh-voco
+npm install -g pnpm
+pnpm install
+pnpm build
+$repo = (Resolve-Path .).Path
+dsh plugin --profile web add "$repo\packages\voice-app"
+dsh web
 ```
 
-## 配置语音识别
+## 配置 API Key
 
-在 DSH 的运行环境中设置[硅基流动](https://siliconflow.cn/) API Key：
+语音识别需要你自己的[硅基流动 API Key](https://siliconflow.cn/)，配置名只有一个：`SILICONFLOW_API_KEY`。Edge TTS 不需要 API Key。
+
+在启动 DSH 的同一个 PowerShell 中临时设置：
+
+```powershell
+$env:SILICONFLOW_API_KEY = "sk-your-api-key"
+dsh web
+```
+
+要持久保存，可创建 DSH 用户环境文件 `%USERPROFILE%\.dsh\.env`（设置了 `DSH_HOME` 时使用 `$DSH_HOME/.env`）：
 
 ```dotenv
-SILICONFLOW_API_KEY=你的密钥
+SILICONFLOW_API_KEY=sk-your-api-key
 ```
 
-插件使用 `XingChenAGI/XingChenASR-V3.2-Ultra` 完成云端语音识别，并通过 Edge TTS 的 `zh-CN-XiaoxiaoNeural` 音色输出语音。浏览器只在本地做轻量起音和静音检测，确认一句话结束后才上传音频。
+也可在运行 `dsh web` 的当前目录放置 `.env`。修改后重启 DSH；不要修改 npm 安装目录或 `node_modules` 中的文件，也不要把真实密钥提交到 GitHub。
 
-## 主要功能
+## 首次使用
 
-- 每个 Voice Session 持续绑定一个后台 Agent Session，重启 DSH 后也能恢复。
-- 普通聊天直接回答，只有需要工具的工作才委派给后台 Agent。
-- 委派任务启动前立即播报一句贴合当前请求的简短确认语。
-- 完整任务报告保留在任务界面，语音只播报专门生成的简洁结果。
-- 支持语音打断、页面切换、断线重连以及历史对话恢复。
-- 纯语音会话会根据第一条有效语音请求生成简短标题；标题模型不可用时使用语音转写作为备用。
-- 服务端和浏览器界面统一通过一个公开 npm 包发行。
+1. 运行 `dsh web` 并打开 DSH Web UI。
+2. 新建或选择会话，点击麦克风并允许浏览器权限。
+3. 直接说话，连续静音约 1.5 秒后提交一句话。
+4. 普通聊天由前台回答，需要项目工具的工作会委派给后台 Agent。
 
-## 配置项
+每个语音会话持续绑定自己的后台 Agent Session。上下文达到轮换阈值后，后续任务会自动进入新的子会话，但仍与原语音会话绑定。
 
-默认以连续静音 1.5 秒作为一句话的边界。`silenceDurationMs`、`speechThreshold`、`minSpeechDurationMs` 和 `maxUtteranceMs` 等高级参数可在插件 profile 配置中调整。
+## 功能
 
-## 要求与限制
+- SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra` 云端语音识别。
+- Edge TTS `zh-CN-XiaoxiaoNeural` 语音回复。
+- 语音打断、页面切换、断线重连和历史恢复。
+- 委派前即时确认，完整报告保留在 DSH 任务界面。
+- 可选接入 `@flowingspring/dsh-workspace-memory` 长期记忆。
 
-- 麦克风和播放界面面向 DSH Web UI，并不是框架无关的浏览器插件。
-- 云端语音识别需要网络连接及硅基流动 API Key。
-- 语音回复目前默认使用 Edge TTS 的中文晓晓音色。
+## 排查
 
-源码、开发说明和问题反馈请前往 [GitHub 仓库](https://github.com/lgquan/dsh-voco)。
+- **缺少 API Key**：确认 `SILICONFLOW_API_KEY` 在启动 DSH 的进程中可见；修改 `.env` 后重启 `dsh web`。
+- **无法录音**：检查浏览器麦克风权限和系统输入设备，并确认页面来自 `dsh web`。
+- **识别失败或较慢**：检查网络、Key 有效期、硅基流动账户额度及模型/Provider 延迟。
+
+## 链接
+
+- [GitHub 源码与问题反馈](https://github.com/lgquan/dsh-voco)
+- [npm 包](https://www.npmjs.com/package/@flowingspring/dsh-voco)
 
 ## 许可证
 

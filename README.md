@@ -2,76 +2,135 @@
 
 [English](README.en.md) | 中文
 
-像 ChatGPT 高级语音那样，用自然的语音和你的 dsh 编码 Agent 对话——而且不止是聊天，它能真正把活干完。
+`dsh-voco` 是面向 DeepSeek Harness（DSH）Web UI 的语音对话插件。它让你用自然语言说出需求，并将需要项目工具的工作委派给后台 Agent；完整任务报告仍保留在 DSH 会话中，语音只播报简洁结果。
 
-维护者架构说明见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+插件使用硅基流动云端语音识别和 Edge TTS。它不是独立的浏览器扩展，也不需要单独运行一个后台服务。
 
-你开口说一句需求，dsh 立刻用自然口语回应。当你要的是一份「任务」（查代码、跑构建、改文件……），语音前端会把它派给持续复用的后台 Agent Session；完整报告留在任务界面，语音只说专门生成的口语版结果，不朗读报告。
+## 安装前准备
 
-## 交互
+- Node.js 22.19 或更高版本（安装 DSH CLI 时使用）。
+- 一个已经可以运行的 DSH Web profile。
+- 一个硅基流动 API Key。语音识别会产生硅基流动 API 用量，Key 由用户自行申请和承担费用。
+- 支持麦克风的现代浏览器。
 
-- **云端语音识别**：浏览器采集音频，本地只做轻量音量检测；连续静音 `1500ms` 后把当前语句封装为 WAV，交给硅基流动 `XingChenAGI/XingChenASR-V3.2-Ultra` 转写。环境音或空转写不会打断正在播放的回复，只有返回有效文字后才停止当前播报。回复使用 Edge TTS 的 Xiaoxiao 中文音色，支持边说边听和打断。
-- **单按钮麦克风控制**：首次点击麦克风开始语音会话；再次点击进入红色斜杠静音状态，再点即可恢复收音。静音只停止麦克风 Track 与 PCM 上传，文字输入、后台任务和 Edge TTS 语音回复继续工作；彻底结束会话仍使用全局浮层的“结束”操作。
-- **聊天、轻工具与任务分流**：云端 ASR 返回文字后，由轻量前台模型结合最近对话判断意图。寒暄和稳定知识直接回答；当前日期、时间和星期通过本机时钟工具取得，回复不会由模型猜测；需要项目、Shell 或其他复杂能力的工作才进入后台 Agent。
-- **上下文任务重述**：委派前，前台把省略指代的口语整理成自包含的“当前任务”，并把“前置背景”和真实“用户原话”分开交给后台。后台以当前任务为最高优先级，背景只用于消歧，避免把“你帮我看呀”误解成检查项目。
-- **即时确认再派活**：需要委派的工作会先生成一句简短确认语立即播报，再通过 `realtime_delegation` 进入固定后台 Agent，不增加额外模型调用。
-- **连续任务上下文**：同一语音会话的多次委派复用一个后台 Agent Session，每次任务仍有独立 delegation id。
-- **语音会话标识**：侧栏波形图标表示该会话已经成功启用过语音；先文字后语音、先语音后文字的混合会话仍保留标识，后台 Agent 会话不会显示语音图标。
-- **独立口语化结果**：后台 Agent 用 `progress | result | warning | error | question` 事件和唯一的 `detail` 字段提交完整事实；语音层结合用户原话调用独立模型重写，并把整段回复作为一条页面消息和一次 TTS 响应。Edge TTS 内部仍按句合成，但不会拆成多个气泡。
-- **可恢复的双会话记忆**：停止再启动语音或重启 DSH 后，会恢复来源 Session 的最近对话及其固定后台 Agent Session 绑定；中断任务会告知上次进度，但不会自动重放。
-- **可选 Workspace 长期记忆**：安装 `@flowingspring/dsh-workspace-memory` 后，语音前台会在路由和普通聊天前读取当前 Workspace 的摘要与相关记忆，并把完成的语音片段交给 Memory 插件按阶段整理；未安装时完全保持原有行为。后台 Agent 继承相同 `cwd`，因此与 Voice Session 共享同一份长期记忆。
-- **不中断的体验**：浏览器切走、断线重连，正在跑的语音会话和后台任务都不会停。
-
-## 安装
+如果还没有 DSH CLI，先安装：
 
 ```powershell
+npm install -g @deepseek-ai/dsh
+```
+
+## 方式一：从 npm 安装（推荐）
+
+这是普通用户最简单的安装方式。只安装公开的单一插件包，不需要下载或修改本仓库源码：
+
+```powershell
+dsh plugin --profile web add @flowingspring/dsh-voco
+```
+
+安装完成后启动 DSH Web：
+
+```powershell
+dsh web
+```
+
+打开终端显示的本地地址，在会话中点击麦克风并允许浏览器使用麦克风即可。
+
+## 方式二：从 GitHub 获取源码安装
+
+GitHub 仓库是一个 pnpm workspace，真正的 DSH 插件位于 `packages/voice-app`。源码安装适合需要查看代码、调试或修改插件的开发者：
+
+```powershell
+git clone https://github.com/lgquan/dsh-voco.git
+cd dsh-voco
+npm install -g pnpm
 pnpm install
 pnpm build
 $repo = (Resolve-Path .).Path
 dsh plugin --profile web add "$repo\packages\voice-app"
 ```
 
-对外安装入口是 `@flowingspring/dsh-voco`，源码位于 `packages/voice-app`；其余 workspace 只是内部开发模块，其服务端入口和浏览器界面都会打包进 `@flowingspring/dsh-voco`，不会作为用户插件安装。
-
-发布包只需要安装这一个包：
+然后仍然使用 DSH 启动 Web UI：
 
 ```powershell
-dsh plugin --profile web add @flowingspring/dsh-voco
-```
-
-长期记忆是可选能力，不是 Voco 的必需依赖。需要时另外安装本仓库同级目录的
-`dsh-workspace-memory`；只安装任意一个插件都可以独立运行。
-
-如果从源码开发，仍可使用上面的本地路径安装方式；这不会改变最终发行包的单包结构。
-
-`dsh` 命令来自 `npm install -g @deepseek-ai/dsh`。启动 web（voice 界面随之加载）：
-
-```sh
 dsh web
 ```
 
-## 语音环境
+源码安装不会修改 DeepSeek Harness 的主体源码。重新安装或升级源码插件时，在仓库中重新执行 `pnpm install`、`pnpm build`，再执行一次本地路径安装命令即可。
 
-在项目根目录创建 `.env`，配置硅基流动 API Key：
+## 配置硅基流动 API Key
 
-```dotenv
-SILICONFLOW_API_KEY=你的密钥
+插件只需要一个密钥：`SILICONFLOW_API_KEY`。请先在[硅基流动控制台](https://siliconflow.cn/)申请自己的 API Key。不要把真实密钥写进源码、提交到 GitHub，或发送给其他人。
+
+### 临时配置：当前 PowerShell 会话
+
+在启动 DSH 的同一个终端中设置：
+
+```powershell
+$env:SILICONFLOW_API_KEY = "sk-your-api-key"
+dsh web
 ```
 
-`.env` 已被 Git 忽略。默认连续静音 `1500ms` 后上传一句话，且需要至少 `250ms` 的有效音量才会确认起音；可在 `packages/voice-app/cordis.patch.yml` 中调整 `silenceDurationMs`、`speechThreshold`、`minSpeechDurationMs` 和 `maxUtteranceMs`。本地不再下载或加载 ASR/VAD 模型，也不要求 Python、pip、PyTorch 或 ONNX；语音回复继续使用 Edge TTS 和 `zh-CN-XiaoxiaoNeural` 音色。
+关闭该终端后，变量会失效。
 
-语音连接在线时，从当前会话输入框手动提交的纯文本也会作为一次语音输入处理：页面显示同一条用户消息，回复继续进入口语化文本流并由 Edge TTS 播放。语音离线或消息带图片时仍使用 Harness 原生文字提交路径。
+### 持久配置：DSH 用户环境文件
 
-## 模型与延迟建议
+可以创建 DSH 用户目录下的 `.env`。默认位置是 Windows 的 `%USERPROFILE%\.dsh\.env`（如果设置了 `DSH_HOME`，则使用 `$DSH_HOME/.env`）：
 
-语音模式会调用当前选择的模型完成意图判断、后台 Agent 任务和最终口语化改写，因此模型及 Provider 的稳定性会直接影响等待时间和播报体验。
+```dotenv
+SILICONFLOW_API_KEY=sk-your-api-key
+```
 
-- 优先选择响应稳定、支持流式输出的模型与 Provider，避免因首个 token 返回过慢而延迟语音播报。
-- 使用 DeepSeek 模型时，推荐优先选择 DeepSeek 官方 Provider；也可以使用经过实际验证、延迟稳定的第三方 Provider。
-- 免费模型或免费路由通常存在排队、限流和负载波动。即使支持流式输出，首个 token 的延迟也可能明显变化，偶尔等待较长时间不一定是插件故障。
-- 如果语音回复经常变慢，可以先用相同问题对比不同 Provider 的首字延迟，再决定长期使用的模型线路。
+也可以在执行 `dsh web` 的当前目录创建 `.env`。DSH 会在启动时读取这些环境层，插件随后从 `process.env.SILICONFLOW_API_KEY` 获取密钥。无需进入 npm 安装目录，也不要修改 `node_modules` 中的文件。
 
-## 限制
+如果同时设置了系统环境变量和 `.env`，已经继承的环境变量优先。修改 `.env` 后请重启 `dsh web`，因为环境在进程启动时读取一次。
 
-- 浏览器麦克风与播放界面面向 dsh Web UI：它由复制而来的 dsh client tsdown 预设构建，并通过 dsh web 运行时的 `window.__ModuleLoader__` 契约加载，因此不是框架无关的浏览器插件。
-- Voice Session 记录按「读取时必需」处理的持久 `voice/*` 事件；不带本插件的 dsh 构建加载它们会被拒绝。
+## 开始使用
+
+1. 运行 `dsh web` 并打开 DSH Web UI。
+2. 新建或选择一个会话。
+3. 点击麦克风按钮并允许浏览器权限。
+4. 直接说话；连续静音约 1.5 秒后，当前语句会提交给云端识别。
+5. 普通聊天由前台处理，需要读写项目或运行工具的工作会交给后台 Agent。
+
+语音会话可以被打断、断线重连和恢复历史。每个语音会话会持续绑定自己的后台 Agent Session；上下文达到轮换阈值时，插件会为后续任务创建新的子会话，但仍归属于同一语音会话。
+
+## 主要能力
+
+- SiliconFlow `XingChenAGI/XingChenASR-V3.2-Ultra` 云端语音识别。
+- Edge TTS `zh-CN-XiaoxiaoNeural` 中文语音回复。
+- 语音、文字和后台 Agent 任务可以在同一 DSH 会话中协作。
+- 委派前即时播报确认语，完整报告保留在任务界面。
+- 页面切换、断线重连和 DSH 重启后恢复语音会话绑定。
+- 可选接入 `@flowingspring/dsh-workspace-memory`，为语音前台和后台 Agent 提供 Workspace 长期记忆。
+
+## 常见问题
+
+### 点击麦克风提示缺少 API Key
+
+确认启动 DSH 的进程能读到 `SILICONFLOW_API_KEY`。如果刚创建或修改了 `.env`，先停止旧的 DSH 进程，再重新运行 `dsh web`。
+
+### 浏览器没有声音或无法录音
+
+检查当前页面是否获得麦克风权限、系统输入设备是否正常，并确认使用的是 `dsh web` 提供的页面，而不是直接打开 HTML 文件。
+
+### 识别失败或等待时间较长
+
+语音识别需要访问硅基流动网络服务。请检查网络、API Key 有效期、账户额度，以及所选模型和 Provider 的响应延迟。
+
+### 想调整静音和起音阈值
+
+高级参数位于插件 profile 的 `cordis.patch.yml`，包括 `silenceDurationMs`、`speechThreshold`、`minSpeechDurationMs` 和 `maxUtteranceMs`。普通用户通常不需要修改这些参数。
+
+## 可选 Workspace Memory
+
+长期记忆不是 Voco 的必需依赖。需要时另外安装 `@flowingspring/dsh-workspace-memory`；只安装 Voco 也可以独立使用。Memory 插件的安装和配置请参阅其项目文档。
+
+## 开发与反馈
+
+- 源码与问题反馈：[GitHub](https://github.com/lgquan/dsh-voco)
+- npm 包：[`@flowingspring/dsh-voco`](https://www.npmjs.com/package/@flowingspring/dsh-voco)
+- 架构说明：[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
+## 许可证
+
+[MIT](LICENSE)
