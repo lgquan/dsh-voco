@@ -273,4 +273,5 @@ pnpm build
 - 2026-08-31：完成 `VoiceController` pending PTT、来源状态恢复和重复提交保护。未连接来源在提交后立即静音并保持连接接收回复；已连接免提/静音来源分别恢复原输入状态。
 - 2026-08-31：完成话筒 Pointer Events 长按交互、Pointer Capture、click 抑制、窗口失焦和页面隐藏释放，以及按住状态视觉反馈。
 - 2026-08-31：自动化验证通过：`pnpm typecheck`、`pnpm test -- --run`（15 个测试文件，146 项测试）和 `pnpm build`。构建过程仍会显示上游 `dsh-client-ui-primitives` 缺少 source map 的 Vite 警告，不影响构建或测试结果。
-- 当前状态：代码实现和自动化验证完成，版本目标为 0.3.8；发布前仍需完成本地 DSH Web 页面真实鼠标/触摸验收。
+- 2026-08-31：`@flowingspring/dsh-voco@0.3.8` 已发布到 npm，`latest` 已指向 0.3.8；Web profile 已从 npm 实体包 0.3.7 升级到 0.3.8，并重启 `dsh web`。
+- 当前状态：代码实现、自动化验证、Git 远程备份、npm 发布和 Web profile 重装已完成；仍需在真实页面完成鼠标/触摸 PTT 验收。
