@@ -1,0 +1,47 @@
+# Voice interaction mode layered after dsh-base and dsh-web-app.
+- insert:
+    - id: llm-tool-call-compat
+      name: '@flowingspring/dsh-voco/llm-tool-call-compat'
+
+    - id: voice
+      name: '@flowingspring/dsh-voco/voice'
+      config:
+        provider: local
+
+    - id: voice-local
+      name: '@flowingspring/dsh-voco/voice-local'
+      config:
+        interactionMode: frontend-agent
+        inputSampleRate: 16000
+        outputSampleRate: 48000
+        ttsRate: '+20%'
+        silenceDurationMs: 1500
+        speechThreshold: 0.015
+        minSpeechDurationMs: 250
+        maxUtteranceMs: 60000
+
+    - id: voice-assistant
+      name: '@flowingspring/dsh-voco/voice-assistant'
+      config:
+        maxPendingObservations: 64
+        restoreConversation: true
+        memoryRecallTimeoutMs: 250
+        maxRestoredUtterances: 24
+        taskSessionPolicy: continuous
+        taskSessionRotationRatio: 0.95
+        taskSessionRotationReserveTokens: 2048
+        taskSessionHandoffMaxChars: 12000
+        completedAnnouncement: 任务已完成。
+        failedAnnouncement: 任务失败了，请查看屏幕上的错误信息。
+        cancelledAnnouncement: 任务已取消。
+        interruptedAnnouncement: 上次任务因服务关闭而中断，没有自动重放。你可以告诉我是否继续。
+
+    - id: voice-web
+      name: '@flowingspring/dsh-voco/voice-web'
+      inject: [webRuntime]
+      config:
+        trustedHosts: !!js ctx.webRuntime.trustedHosts
+        maxAudioFrameBytes: 65536
+
+    - id: ui-voice
+      name: '@flowingspring/dsh-voco'
