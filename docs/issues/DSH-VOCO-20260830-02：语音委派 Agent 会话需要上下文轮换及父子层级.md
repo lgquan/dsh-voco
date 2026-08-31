@@ -33,7 +33,7 @@
 2. 将“收纳”与“轮换”解耦：`isolated` 下每个任务天然新开一个子会话，只需要保证父子元数据；上下文轮换只在 `continuous` 下启用。
 3. 在持续模式的委派前按任务粒度检查 `ctx.tokenMeter.measure(child)` 与 `child.requestContext()?.contextWindow`。不要把 95% 当作绝对硬门控；容量未知时按显式累计预算或宿主 context-overflow/失败路径兜底。
 4. 只在 Agent 空闲、任务完成或等待用户输入的边界切换，不在活动 turn 中硬切。创建 successor child 后注入有明确预算的工作状态交接摘要；旧 child 保留持久历史和侧栏子项。
-5. 通过 durable binding/rotation 记录恢复最新活动 child，同时让每条 `voice/task-delegated` 保留实际 `taskSessionId`。UI 使用父子地址打开，不再用顶层 `sessions.ids` 判断子会话可导航性；在宿主 workspace 尚未渲染子会话树时，由语音 overlay 提供轻量的父行展开按钮和缩进 child rows，并调用宿主 catalog refresh/open 接口。
+5. 通过 durable binding/rotation 记录恢复最新活动 child，同时让每条 `voice/task-delegated` 保留实际 `taskSessionId`。UI 使用父子地址打开，不再用顶层 `sessions.ids` 判断子会话可导航性；顶部委派任务卡片通过宿主 catalog refresh/open 接口导航到 child，侧栏只保留语音父会话标识，不重复渲染子会话树。
 6. 统一文档与默认策略：明确 `isolated` 是否仍为默认；若产品目标是连续语音委派，应把连续模式及轮换阈值写成显式配置和用户可理解的行为。
 
 ## 处理记录
@@ -61,6 +61,7 @@
 - 2026-08-30：确认 Host `SubagentCatalog` 契约只有 child、mode、activity、label 和 `parentAvailable`，没有 provider 或插件来源字段；不能在插件中把所有 `subagentsByParent` 父键都认作 Voice，否则会误标普通 Harness 子代理。
 - 2026-08-30：在 `dsh-voco` 内为持久化 `taskActivity` 增加可选 `parentSessionId`。`VoiceDelegationView` 观察到委派任务时写入 child -> Voice parent 关联；侧栏在 Voice 主会话历史过期但关联仍存在时恢复语音标记和展开按钮。增加普通 Host 子代理目录的负向测试，确保无语音证据时不显示展开控件。
 - 2026-08-30：提交前审计确认生产阈值已恢复为 `taskSessionRotationRatio: 0.95`，临时 `0.01` 仅用于历史真实验收；`node_modules`、各 package 的 `lib` 和缓存均被 `.gitignore` 忽略且未纳入版本控制。架构说明同步记录 child -> Voice parent 恢复路径；现有 Web host 未重启前不会自动加载新 bundle，因此本问题仍保留“处理中”状态。
+- 2026-09-01：按产品边界调整撤回语音侧栏的子会话展开树、三角按钮和 child 菜单；保留父子 lineage、顶部委派任务卡片导航、归档继承判断及主会话删除级联。`VoiceSessionMarkers` 仍刷新 catalog 供顶部任务卡使用，但不再向侧栏插入 child DOM。
 
 ## 后续低优先级优化
 - 为每个 child 提供更明确的生成序号或可读标签，改善大量轮换后的识别。

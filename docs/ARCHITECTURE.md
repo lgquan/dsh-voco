@@ -59,17 +59,17 @@ voice 能力层 ---- voice-local ---- SiliconFlow ASR / Edge TTS
 
 来源 Session 是用户的主要对话历史。`isolated` 策略为每次委派创建一个子会话；`continuous` 策略在模型一致且上下文压力未知或未达软高水位时复用当前子会话。压力达到 `taskSessionRotationRatio` 或为下一任务保留的 token 预算不足时，在任务边界创建新的空 successor，并注入有限的工作状态交接；不会使用 `SessionStore.fork()` 复制旧历史。每次请求仍拥有独立的 delegation id。绑定关系通过 `voice/task-session-bound` 和 `voice/agent-binding-state` 事件记录，并在重连或重启后恢复最新子会话；旧子会话保留为可导航的历史项。
 
-侧栏语音标识是客户端维护的来源 Session ID 索引。语音成功连接后记录该 ID，因此文字先输入、语音后使用的混合会话仍显示波形图标。后台 Agent Session ID 不会写入来源索引，也不会显示语音图标。委派任务同时持久化 child 到 Voice parent 的轻量关联；当浏览器本地来源索引因刷新或历史重建暂时缺失时，侧栏可据此恢复对应父会话的语音标识和子会话展开入口。没有来源索引或 child 关联的普通 Host 子代理不会被误标为语音会话。
+侧栏语音标识是客户端维护的来源 Session ID 索引。语音成功连接后记录该 ID，因此文字先输入、语音后使用的混合会话仍显示波形图标。后台 Agent Session ID 不会写入来源索引，也不会显示语音图标。委派任务同时持久化 child 到 Voice parent 的轻量关联；该关联用于顶部委派任务卡片的可导航性，不再在侧栏复制子会话树。没有来源索引或 child 关联的普通 Host 子代理不会被误标为语音会话。
 
 ## UI 集成
 
 `packages/ui-voice/src/client/index.ts` 注册以下 DSH UI slots：
 
 - `conversation.input.right`：麦克风按钮、静音切换和 400 ms 长按 PTT；AI 播放时额外显示打断播放按钮。
-- `shell.overlay`：活动语音状态/控制，以及侧栏语音父会话标识和可折叠子会话装饰器。
+- `shell.overlay`：活动语音状态/控制，以及侧栏语音父会话标识。
 - `conversation.chat.node`：语音 utterance 和委派任务卡片。
 
-当前 DSH workspace package 没有提供单条侧栏会话行的扩展 slot，且当前版本将 `origin: 'subagent'` 子会话从顶层列表过滤掉。因此 `VoiceSessionMarkers` 观察 Host 所有的会话行，并通过 React 行 key 精确找到语音父会话，在已有状态区域绘制 Voice 标识和展开按钮；展开后在父行下方绘制缩进的 child rows。child 行保留宿主父子地址导航，并提供转发到 runtime/registry 的重命名、分叉、归档、删除菜单，同时阻断宿主 HoverCard 事件。它不接管普通会话的打开、菜单或排序。
+当前 DSH workspace package 没有提供单条侧栏会话行的扩展 slot，且当前版本将 `origin: 'subagent'` 子会话从顶层列表过滤掉。因此 `VoiceSessionMarkers` 观察 Host 所有的会话行，并通过 React 行 key 精确找到语音父会话，在已有状态区域绘制 Voice 标识；它不渲染子会话行、展开控件或子会话菜单，也不接管普通会话的打开、菜单或排序。顶部委派任务卡片继续通过父子地址导航进入对应 child。
 
 ## 持久化与恢复
 

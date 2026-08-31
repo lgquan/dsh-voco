@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@flowingspring/dsh-voco':
-        specifier: 0.3.10
-        version: 0.3.10(7ff86f886c6ae0719eed0306dd47e76c)
+        specifier: 0.3.11
+        version: 0.3.11(7ff86f886c6ae0719eed0306dd47e76c)
     devDependencies:
       '@types/node':
         specifier: ^22.20.0
@@ -1132,8 +1132,8 @@ packages:
       '@noble/hashes':
         optional: true
 
-  '@flowingspring/dsh-voco@0.3.10':
-    resolution: {integrity: sha512-5fCZ/1ufoMX9rQ4OUwEaQ3hIQjZwtkv8rbO2mjFsshBYE//CJTxl69mGJAE6Sxb78tu0uFz4W0dWsbqnvvBqcw==}
+  '@flowingspring/dsh-voco@0.3.11':
+    resolution: {integrity: sha512-U37T6gOTNZKYV80isGI5QzPG3OMiRajZU6Pvq22r8b0eHas0ZU4AoLmb3iDK4OzAYEET9EoX6JwQz2s2qUQo6Q==}
     peerDependencies:
       '@deepseek-ai/cordis': ^4.0.1
       '@deepseek-ai/dsh-agent': ^0.1.1-rc.1
@@ -3266,7 +3266,7 @@ snapshots:
 
   '@exodus/bytes@1.15.1': {}
 
-  '@flowingspring/dsh-voco@0.3.10(7ff86f886c6ae0719eed0306dd47e76c)':
+  '@flowingspring/dsh-voco@0.3.11(7ff86f886c6ae0719eed0306dd47e76c)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
       '@deepseek-ai/dsh-agent': 0.1.1-rc.2(c1537a8836b04097f168b024f1e38d85)

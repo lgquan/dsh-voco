@@ -14,7 +14,7 @@ import {
   VoiceDelegationView, type VoiceDelegationViewProps,
   VoiceUtteranceView, type VoiceUtteranceViewProps,
 } from '../src/client/VoiceNodeViews.tsx'
-import { relativeTimeLabel, VoiceSessionMarkers } from '../src/client/VoiceSessionMarkers.tsx'
+import { VoiceSessionMarkers } from '../src/client/VoiceSessionMarkers.tsx'
 import { isSessionEffectivelyArchived } from '../src/client/session-archive.ts'
 import { VoiceOverlay, type VoiceOverlayProps } from '../src/client/VoiceOverlay.tsx'
 import { VoiceController, type VoiceClientSnapshot } from '../src/client/voice-controller.ts'
@@ -288,12 +288,6 @@ function runtimeProps() {
 }
 
 describe('Voice UI surfaces', () => {
-  it('uses the same compact Chinese relative-time labels as the Host', () => {
-    const now = 10_000_000
-    expect(relativeTimeLabel(now - 36 * 60_000, now, 'zh-CN')).toBe('36分钟')
-    expect(relativeTimeLabel(now - 35 * 60_000, now, 'zh-CN')).not.toContain('前')
-  })
-
   it('shows live utterance deltas, then prefers durable terminal text', () => {
     const id = VoiceUtteranceId('utterance-live')
     const runningNode = {
@@ -399,257 +393,6 @@ describe('Voice UI surfaces', () => {
     }
   })
 
-  it('renders expandable delegated children beneath a Voice Session row', async () => {
-    const openSession = vi.fn()
-    const refreshSubagents = vi.fn()
-    const setSubagentCatalogOpen = vi.fn()
-    const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '查看项目文件', activity: 'inactive', hasChildren: false }],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    }
-    const history = {
-      entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }],
-      taskActivity: [{ sessionId: TASK_SESSION, lastActiveAt: 2 }],
-    }
-    const view = render(<>
-      <div role="tree">
-        {[<div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div>]}
-      </div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useVoiceHistory={selector => selector(history)}
-        openSession={openSession}
-        refreshSubagents={refreshSubagents}
-        setSubagentCatalogOpen={setSubagentCatalogOpen}
-      />
-    </>)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
-    expect(refreshSubagents).toHaveBeenCalledWith(VOICE_SESSION)
-    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
-    expect(setSubagentCatalogOpen).toHaveBeenCalledWith(VOICE_SESSION, true)
-    const child = document.querySelector<HTMLElement>('[data-voice-subagent-child]')
-    expect(child?.querySelector('[class*="childLabel"]')?.textContent).toBe('查看项目文件')
-    expect(child?.getAttribute('title')).toBeNull()
-    expect(child?.querySelector('[data-voice-subagent-child-time]')).toBeTruthy()
-    const hostHover = vi.fn()
-    document.querySelector<HTMLElement>('.sessionRow')?.addEventListener('mouseover', hostHover)
-    fireEvent.mouseOver(child!)
-    expect(hostHover).not.toHaveBeenCalled()
-    const menuTrigger = screen.getByRole('button', { name: '会话“查看项目文件”的操作' })
-    fireEvent.click(menuTrigger)
-    expect(screen.getByRole('menuitem', { name: '重命名' })).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: '分叉会话' })).toBeTruthy()
-    expect(screen.queryByRole('menuitem', { name: '归档会话' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: '删除会话' })).toBeNull()
-    expect(menuTrigger.getAttribute('title')).toBeNull()
-    expect(child?.querySelector('[data-voice-subagent-child-time]')?.getAttribute('data-updated-at')).toBe('2')
-    expect(child?.getAttribute('data-menu-open')).toBe('true')
-    fireEvent.click(menuTrigger)
-    fireEvent.click(child!)
-    expect(openSession).toHaveBeenCalledWith(TASK_SESSION)
-  })
-
-  it('recovers the Voice sidebar disclosure from the Host catalog when history is stale', async () => {
-    const secondTask = 'voice-task-session-2' as SessionId
-    const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [
-          { kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '只读列出工作区根目录文件' },
-          { kind: 'child', id: secondTask, mode: 'continuable', label: '读取 package.json 首行' },
-        ],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    } as typeof state.subagentsByParent
-    render(<>
-      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useVoiceHistory={selector => selector({
-          entries: [],
-          taskActivity: [
-            { sessionId: TASK_SESSION, parentSessionId: VOICE_SESSION, lastActiveAt: 2 },
-            { sessionId: secondTask, parentSessionId: VOICE_SESSION, lastActiveAt: 3 },
-          ],
-        })}
-        openSession={vi.fn()}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
-  })
-
-  it('does not infer a Voice parent from an ordinary Host subagent catalog', async () => {
-    const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '普通后台任务' }],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    } as typeof state.subagentsByParent
-    render(<>
-      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">普通会话</span></div></div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useVoiceHistory={selector => selector({ entries: [], taskActivity: [] })}
-        openSession={vi.fn()}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-
-    await waitFor(() => { expect(screen.queryByRole('button', { name: '展开语音子会话' })).toBeNull() })
-  })
-
-  it('adds archive-manager deletion only when its public RPC capability is supplied', async () => {
-    const openSession = vi.fn()
-    const deleteSession = vi.fn().mockResolvedValue(undefined)
-    const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '待删除任务' }],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    } as typeof state.subagentsByParent
-    render(<>
-      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useVoiceHistory={selector => selector({ entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] })}
-        openSession={openSession}
-        childActions={{ delete: deleteSession }}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
-    fireEvent.click(screen.getByRole('button', { name: '会话“待删除任务”的操作' }))
-    expect(screen.getAllByRole('menuitem')).toHaveLength(3)
-    expect(screen.queryByRole('menuitem', { name: '归档会话' })).toBeNull()
-    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
-    expect(screen.getByRole('dialog', { name: '删除会话' })).toBeTruthy()
-    expect(screen.getByText('将永久删除会话“待删除任务”及其子代理（含正在运行的）和全部记录（对话内容、统计、缓存），此操作不可恢复。')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '删除会话' }))
-    await waitFor(() => { expect(deleteSession).toHaveBeenCalledWith(TASK_SESSION, '待删除任务') })
-  })
-
-  it('shows an official error dialog when forking a delegated child fails', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const forkSession = vi.fn().mockRejectedValue(new Error('session fork unavailable'))
-    const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'one-shot', label: '待分叉任务' }],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    } as typeof state.subagentsByParent
-    render(<>
-      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useVoiceHistory={selector => selector({ entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] })}
-        openSession={vi.fn()}
-        childActions={{ fork: forkSession }}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
-    fireEvent.click(screen.getByRole('button', { name: '会话“待分叉任务”的操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '分叉会话' }))
-    await waitFor(() => { expect(forkSession).toHaveBeenCalledWith(TASK_SESSION) })
-    expect(screen.getByRole('dialog', { name: '会话操作失败' })).toBeTruthy()
-    expect(screen.getByText('session fork unavailable')).toBeTruthy()
-  })
-
-  it('hides children recorded in the shared workspace archive set', async () => {
-    const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'one-shot', label: '已归档任务' }],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    } as typeof state.subagentsByParent
-    render(<>
-      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useWorkspaces={selector => selector({ ...workspaceState(), archivedSessionIds: [TASK_SESSION] })}
-        useVoiceHistory={selector => selector({ entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] })}
-        openSession={vi.fn()}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
-    expect(document.querySelector('[data-voice-subagent-child]')).toBeNull()
-  })
-
-  it('hides children when their Voice parent is archived', async () => {
-    const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'one-shot', label: '父会话已归档' }],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    } as typeof state.subagentsByParent
-    const view = render(<>
-      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useWorkspaces={selector => selector({ ...workspaceState(), archivedSessionIds: [VOICE_SESSION] })}
-        useVoiceHistory={selector => selector({ entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] })}
-        openSession={vi.fn()}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
-    expect(document.querySelector('[data-voice-subagent-child]')).toBeNull()
-    view.rerender(<>
-      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useVoiceHistory={selector => selector({ entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] })}
-        openSession={vi.fn()}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-    await waitFor(() => { expect(document.querySelector('[data-voice-subagent-child]')).not.toBeNull() })
-  })
-
   it('walks archived state through parent summaries and fallback navigation', () => {
     expect(isSessionEffectivelyArchived(
       TASK_SESSION,
@@ -664,90 +407,31 @@ describe('Voice UI surfaces', () => {
     )).toBe(true)
   })
 
-  it('shows a child last-activity time using the Host relative-time buckets', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(10_000_000)
+  it('keeps child sessions out of the sidebar while refreshing the catalog for top task cards', async () => {
     const state = listState()
     state.subagentsByParent = {
       [VOICE_SESSION]: {
-        entries: [{
-          kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '查看项目文件',
-          activity: 'inactive', hasChildren: false, updatedAt: 10_000_000 - 30 * 60_000,
-        }],
+        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '后台任务' }],
         parentAvailable: true,
         state: 'ready',
         error: null,
       },
     } as typeof state.subagentsByParent
+    const refreshSubagents = vi.fn()
     render(<>
       <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
       <VoiceSessionMarkers
         {...runtimeProps() as unknown as never}
         useSessions={selector => selector(state)}
         useVoiceHistory={selector => selector({ entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] })}
-        openSession={vi.fn()}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
-    expect(document.querySelector('[data-voice-subagent-child-time]')?.textContent).toBe('30min')
-  })
-
-  it('keeps the disclosure control visible while the child catalog is still absent', async () => {
-    const refreshSubagents = vi.fn()
-    const setSubagentCatalogOpen = vi.fn()
-    const state = listState()
-    const history = { entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] }
-    render(<>
-      <div role="tree">
-        <div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div>
-      </div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useVoiceHistory={selector => selector(history)}
-        openSession={vi.fn()}
         refreshSubagents={refreshSubagents}
-        setSubagentCatalogOpen={setSubagentCatalogOpen}
       />
     </>)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
+    await waitFor(() => { expect(document.querySelector('[data-voice-session-marker]')).not.toBeNull() })
     expect(refreshSubagents).toHaveBeenCalledWith(VOICE_SESSION)
-    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
-    expect(setSubagentCatalogOpen).toHaveBeenCalledWith(VOICE_SESSION, true)
-  })
-
-  it('keeps unavailable catalog rows visible without navigating them', async () => {
-    const openSession = vi.fn()
-    const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [{ kind: 'broken', id: TASK_SESSION, mode: 'one-shot', label: '会话记录损坏', hasChildren: false }],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    } as typeof state.subagentsByParent
-    const history = { entries: [{ sessionId: VOICE_SESSION, lastActiveAt: 1 }] }
-    render(<>
-      <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
-      <VoiceSessionMarkers
-        {...runtimeProps() as unknown as never}
-        useSessions={selector => selector(state)}
-        useVoiceHistory={selector => selector(history)}
-        openSession={openSession}
-        refreshSubagents={vi.fn()}
-        setSubagentCatalogOpen={vi.fn()}
-      />
-    </>)
-    await waitFor(() => { expect(screen.getByRole('button', { name: '展开语音子会话' })).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: '展开语音子会话' }))
-    const child = document.querySelector<HTMLButtonElement>('[data-voice-subagent-child]')
-    expect(child?.textContent).toBe('会话记录损坏')
-    expect(child?.disabled).toBe(true)
-    fireEvent.click(child!)
-    expect(openSession).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /语音子会话/ })).toBeNull()
+    expect(document.querySelector('[data-voice-subagent-child]')).toBeNull()
+    expect(document.querySelector('[data-voice-subagent-list]')).toBeNull()
   })
 
   it('attaches Voice Mode to the current Session and controls the active transport', () => {
@@ -903,7 +587,6 @@ describe('Voice UI assembly', () => {
     const openSubagent = vi.fn()
     let archivedSessionIds: SessionId[] = []
     const refreshSubagents = vi.fn().mockResolvedValue(undefined)
-    const deleteSession = vi.fn().mockResolvedValue({ ok: true, value: { deleted: true } })
     const subagentAddress = vi.fn((id: SessionId) => id === TASK_SESSION
       ? { parentSessionId: VOICE_SESSION, childSessionId: TASK_SESSION, mode: 'continuable' as const }
       : undefined)
@@ -933,7 +616,7 @@ describe('Voice UI assembly', () => {
     const disposeCredentialListener = vi.fn()
     const ctx = {
       get: (key: string) => key === 'remote.workspaceRegistry'
-        ? { deleteSession }
+        ? {}
         : key === 'connection'
           ? { api: { credentials: credentialApi } }
           : undefined,
@@ -995,15 +678,8 @@ describe('Voice UI assembly', () => {
 
     const overlay = (registrations[1]!.options.inject as () => { stopVoice(): Promise<void> })()
     await overlay.stopVoice()
-    const markers = (registrations[2]!.options.inject as () => {
-      childActions?: {
-        delete?: (id: SessionId, title: string) => Promise<void>
-      }
-    })()
-    expect(markers.childActions).not.toHaveProperty('archive')
-    expect(markers.childActions?.delete).toBeTypeOf('function')
-    await markers.childActions!.delete!(TASK_SESSION, 'task')
-    expect(deleteSession).toHaveBeenCalledWith(TASK_SESSION)
+    const markers = (registrations[2]!.options.inject as () => { refreshSubagents(id: SessionId): void })()
+    markers.refreshSubagents(VOICE_SESSION)
     expect(refreshSubagents).toHaveBeenCalledWith(VOICE_SESSION)
     const utterance = (registrations[3]!.options.inject as () => { hooks: { voice: unknown } })()
     expect(utterance.hooks.voice).toBeInstanceOf(VoiceController)
