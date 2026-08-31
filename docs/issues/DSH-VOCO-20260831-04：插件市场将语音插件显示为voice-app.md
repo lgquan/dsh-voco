@@ -71,6 +71,8 @@ name: lgquan/dsh-voco
 - 2026-08-31：扩展分发测试，要求仓库根版本、公开包版本、依赖版本和两份 patch 内容始终一致。
 - 2026-08-31：`pnpm test` 通过，共 15 个测试文件、147 个测试；`pnpm typecheck` 和 `pnpm build` 通过。测试期间仍有上游 `dsh-client-ui-primitives` 缺少 source map 的既有 Vite 警告，不影响测试结果。
 - 2026-08-31：将根入口打成最小 tarball 后安装到独立 `DSH_HOME`，确认 profile bundle stack 包含 `dsh-voco`，依赖树包含 `@flowingspring/dsh-voco@0.3.8`。使用独立端口启动 Web 后，首页模块图发现 Voco 客户端，`/plugins/@flowingspring/dsh-voco/client.js` 返回 HTTP 200。
+- 2026-08-31：提交并推送仓库根入口，提交为 `e6e2ec3`。随后使用实际远程命令 `dsh plugin --profile web add github:lgquan/dsh-voco` 在独立 `DSH_HOME` 中复验通过，并再次确认 Web 客户端可发现、客户端脚本返回 HTTP 200。
+- 2026-08-31：向 `awesome-dsh-plugin` 提交更正 PR [#3984](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/3984)，把条目文件改为 `data/plugins/lgquan__dsh-voco.yml`，并将 `url` 和 `name` 分别改为仓库主页和 `lgquan/dsh-voco`。官方 `Submission gate` 与常规 `check` 均已通过，等待维护者合并。
 
 ## 后续低优先级优化
 
