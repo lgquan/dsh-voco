@@ -40,10 +40,10 @@ Open the local URL printed by DSH, click the microphone in a session, and allow 
 GitHub Releases provide the same prebuilt plugin package as npm. No source checkout or pnpm development environment is required:
 
 ```powershell
-dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.8/flowingspring-dsh-voco-0.3.8.tgz
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.10/flowingspring-dsh-voco-0.3.10.tgz
 ```
 
-Release page: [v0.3.8](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.8)
+Release page: [v0.3.10](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.10)
 
 Whichever installation method you choose, start the Web UI through DSH:
 

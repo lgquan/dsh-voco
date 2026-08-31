@@ -40,10 +40,10 @@ dsh web
 GitHub Release 提供和 npm 相同的预构建插件包，不需要 clone 源码或准备 pnpm 开发环境：
 
 ```powershell
-dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.8/flowingspring-dsh-voco-0.3.8.tgz
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.10/flowingspring-dsh-voco-0.3.10.tgz
 ```
 
-Release 页面：[v0.3.8](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.8)
+Release 页面：[v0.3.10](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.10)
 
 无论选择哪种安装方式，最后都通过 DSH 启动 Web UI：
 

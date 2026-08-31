@@ -93,4 +93,23 @@ describe('dsh-voco distribution interface', () => {
     }))
     expect(repositoryPatch.replaceAll('\r\n', '\n')).toBe(packagePatch.replaceAll('\r\n', '\n'))
   })
+
+  it('keeps public README release links aligned with the package version', async () => {
+    const manifest = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8')) as {
+      version: string
+    }
+    const readmes = await Promise.all([
+      resolve(repositoryRoot, 'README.md'),
+      resolve(repositoryRoot, 'README.en.md'),
+      resolve(packageRoot, 'README.md'),
+      resolve(packageRoot, 'README.zh.md'),
+    ].map(path => readFile(path, 'utf8')))
+    const tarballUrl = `/releases/download/v${manifest.version}/flowingspring-dsh-voco-${manifest.version}.tgz`
+    const releaseUrl = `/releases/tag/v${manifest.version}`
+
+    for (const readme of readmes) {
+      expect(readme).toContain(tarballUrl)
+      expect(readme).toContain(releaseUrl)
+    }
+  })
 })

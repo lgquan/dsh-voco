@@ -29,10 +29,10 @@ dsh web
 GitHub Releases provide a prebuilt plugin package; no source checkout or pnpm installation is required:
 
 ```powershell
-dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.8/flowingspring-dsh-voco-0.3.8.tgz
+dsh plugin --profile web add https://github.com/lgquan/dsh-voco/releases/download/v0.3.10/flowingspring-dsh-voco-0.3.10.tgz
 ```
 
-Release page: [v0.3.8](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.8)
+Release page: [v0.3.10](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.10)
 
 ## Configure the API key
 
