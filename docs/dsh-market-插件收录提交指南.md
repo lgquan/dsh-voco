@@ -6,7 +6,7 @@
 
 本次两个插件可以放在同一个 PR 中提交：
 
-- `@flowingspring/dsh-voco@0.3.8`
+- `@flowingspring/dsh-voco@0.3.9`
 - `@flowingspring/dsh-workspace-memory@0.2.14`
 
 中文介绍写在各自 YAML 的 `description.zh` 中。市场仓库的中英文 README 由脚本自动生成，不要手工修改。
@@ -35,7 +35,7 @@
 | 检查项 | dsh-voco | dsh-workspace-memory |
 | --- | --- | --- |
 | GitHub 仓库 | `lgquan/dsh-voco` | `lgquan/dsh-workspace-memory` |
-| 当前 NPM 版本 | `0.3.8` | `0.2.14` |
+| 当前 NPM 版本 | `0.3.9` | `0.2.14` |
 | `dsh.bundle` | 根 `package.json` 和 `packages/voice-app/package.json` 均已声明 | 根 `package.json` 已声明 |
 | 提交数 | 116，满足至少 10 次 | 21，满足至少 10 次 |
 | 最早本地提交 | 2026-08-24 | 2026-08-29 |
