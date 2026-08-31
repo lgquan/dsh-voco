@@ -39,3 +39,5 @@
 - 2026-08-31：发布后 `pnpm install --frozen-lockfile`、148 项测试、TypeScript 类型检查和完整构建均通过。测试仍显示上游 `dsh-client-ui-primitives` 缺少 source map 的既有警告，不影响结果。
 - 2026-08-31：提交 `c66c545` 和 `v0.3.10` tag 已推送；GitHub Release [dsh-voco v0.3.10](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.10) 已发布并标记为 Latest，包含 `flowingspring-dsh-voco-0.3.10.tgz`。
 - 2026-08-31：从公开 Release 地址重新下载资产验证。下载文件与本地发布文件的 SHA-1 均为 `bd1bf161045612ab180570cc39f1e4b4e67906d5`，SHA-256 均为 `5b80ece9a4fabd7705657d45537c5f252b841978efef5de583a5dedf62535404`。
+- 2026-09-01：为本次侧栏子会话展示逻辑调整发布 `@flowingspring/dsh-voco@0.3.11`。根入口、公开包清单、锁文件、四份 README 及相关指南均已同步到 `0.3.11`；NPM `latest`、GitHub `v0.3.11` Release 和 `flowingspring-dsh-voco-0.3.11.tgz` 资产已完成发布并核对。NPM tarball SHA-1 为 `bd5211557d57f8e92232dfea0ff8b61e5e26e33e`，SHA-256 为 `6AE474B054894D15890248CB47504599CA4141218331A8D2270452C263F45453`。
+- 2026-09-01：使用 `dsh plugin --profile web add @flowingspring/dsh-voco@0.3.11 --config.minimum-release-age=0` 完成 Web profile 重新安装，`dsh plugin --profile web list` 已显示 `@flowingspring/dsh-voco@0.3.11`。类型检查、138 项测试、生产构建及 `git diff --check` 均通过。
