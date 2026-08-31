@@ -5,8 +5,8 @@
 - 发现日期：2026-08-31
 - 复现方式：发布 `@flowingspring/dsh-voco@0.3.9` 后查看 GitHub README、GitHub Releases 和 NPM 包页面
 - 相关模块或代码：根目录及 `packages/voice-app` 的中英文 README、包版本、GitHub Release 发布流程
-- 状态：处理中
-- 验证情况：已确认 NPM `latest` 为 `0.3.9`，但公开 README 和 GitHub 最新 Release 仍指向 `v0.3.8`
+- 状态：已解决
+- 验证情况：NPM `latest`、GitHub README、NPM README、GitHub Latest Release 和公开 tarball 均已验证为 `0.3.10`
 
 ## 问题描述
 
@@ -37,3 +37,5 @@
 - 2026-08-31：四份 README、根安装入口、公开包版本、市场指南和锁文件均已更新为 `0.3.10`；新增分发测试，根据公开包版本动态校验 README 中的 Release 页面及 tarball URL。
 - 2026-08-31：发布 `@flowingspring/dsh-voco@0.3.10`。NPM `latest` 已指向 `0.3.10`，远程 SHA-1 为 `bd1bf161045612ab180570cc39f1e4b4e67906d5`，与用于 GitHub Release 的本地 tarball 一致；NPM 远程 README 已确认显示 `v0.3.10` 安装链接。
 - 2026-08-31：发布后 `pnpm install --frozen-lockfile`、148 项测试、TypeScript 类型检查和完整构建均通过。测试仍显示上游 `dsh-client-ui-primitives` 缺少 source map 的既有警告，不影响结果。
+- 2026-08-31：提交 `c66c545` 和 `v0.3.10` tag 已推送；GitHub Release [dsh-voco v0.3.10](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.10) 已发布并标记为 Latest，包含 `flowingspring-dsh-voco-0.3.10.tgz`。
+- 2026-08-31：从公开 Release 地址重新下载资产验证。下载文件与本地发布文件的 SHA-1 均为 `bd1bf161045612ab180570cc39f1e4b4e67906d5`，SHA-256 均为 `5b80ece9a4fabd7705657d45537c5f252b841978efef5de583a5dedf62535404`。
