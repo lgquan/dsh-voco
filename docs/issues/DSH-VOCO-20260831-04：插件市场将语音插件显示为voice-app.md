@@ -76,6 +76,25 @@ name: lgquan/dsh-voco
 - 2026-08-31：发布 `@flowingspring/dsh-voco@0.3.9`，使仓库根安装入口依赖的公开 NPM 包版本与根项目版本保持一致。NPM 远程 `latest` 已指向 `0.3.9`，远程 tarball 的 SHA-1 `2c446f0fdc5acd80adedceadb21c5775d1e8f337` 与本地发布前打包结果一致。
 - 2026-08-31：更新 `pnpm-lock.yaml` 后确认根依赖解析为 `@flowingspring/dsh-voco@0.3.9`；发布后再次执行测试、类型检查和构建验证。
 
+## 方案评估（2026-09-01）
+
+结合插件市场下载现象重新核对，当前根目录仍是 `private: true` 的仓库级安装 wrapper，市场不会据此自动识别 `@flowingspring/dsh-voco`；实际公开 NPM 包仍位于 `packages/voice-app`。因此“保留仓库根主页且让市场自动走 NPM”不能仅通过市场 YAML 或删除 `tarball` 字段完成。
+
+“让仓库根目录本身成为可发布的 `@flowingspring/dsh-voco` 包”属于中等规模、可实施的发布边界迁移，不需要重写语音功能。服务端五个插件、浏览器 UI、`cordis.patch.yml` 和 `tsdown.client.ts` 的 bundling 设计都可以复用，主要工作是：
+
+- 把公开包 manifest、`dsh.bundle`、依赖、README/LICENSE 和 `files` 清单上移到根目录，并让现有 `packages/voice-app/lib` 构建产物通过根包 `exports` 纳入发布包；
+- 让 `packages/voice-app` 变成私有构建源/兼容目录或移除其重复的公开 manifest，避免 workspace 中同时存在两个同名 `@flowingspring/dsh-voco` 包；
+- 移除根包对同名 NPM 包的自引用，重写 `tsconfig`、tsdown 配置和 source map 路径，更新锁文件及发布脚本；
+- 用 `npm pack --dry-run`、全新 `DSH_HOME` 的 NPM/GitHub 安装、Web 客户端加载和六个 patch 模块逐项回归。
+
+发布包仍只包含构建后的 `packages/voice-app/lib`、根 `cordis.patch.yml`、README 和 LICENSE，内部 workspace 包继续保持私有。风险集中在路径、包清单和发布流程，不在运行时业务逻辑；若暂不迁移，现有 root wrapper 仍可作为 GitHub 源码安装入口，但市场无法获得与记忆插件相同的 NPM 自动识别和下载统计。
+
+- 2026-09-01：实施根包迁移。根 `package.json` 现在是唯一公开的 `@flowingspring/dsh-voco` 包，`packages/voice-app` 改名为私有 `@flowingspring/dsh-voco-source`；根包通过 `exports` 暴露构建后的入口，并以 `prepare` 支持 Git 源码安装时先构建。
+- 2026-09-01：根包版本与源码构建包统一提升为 `0.3.12`，移除根包对同名 NPM 包的自引用，锁文件已重算；市场指南调整为不填写固定版本 `tarball`，后续安装由 NPM latest 跟随版本。
+- 2026-09-01：`pnpm test` 通过，15 个测试文件、138 项测试；`pnpm run typecheck` 和 `pnpm run build` 通过。`pnpm pack --dry-run` 确认包名为 `@flowingspring/dsh-voco@0.3.12`，入口、客户端、五个插件、类型文件、根 patch、README 和 LICENSE 均被打包；既有上游 source map 缺失警告仍存在但不影响结果。
+- 2026-09-01：从实际根 tarball 解包核对 `package.json`、主入口、客户端文件和根 `cordis.patch.yml` 均存在；随后正式发布 `@flowingspring/dsh-voco@0.3.12`，NPM `latest` 和 registry tarball 均已指向新版本。
+- 2026-09-01：使用 `dsh plugin --profile web remove @flowingspring/dsh-voco --config.minimum-release-age=0` 移除旧安装，再执行 `dsh plugin --profile web add @flowingspring/dsh-voco@0.3.12 --config.minimum-release-age=0` 重新安装。Web profile 清单显示 `@flowingspring/dsh-voco@0.3.12`，安装目录为实体目录而非本地 link/Junction；真实页面和语音功能验收待用户完成。
+
 ## 后续低优先级优化
 
 - 可向 `awesome-dsh-plugin` / `dsh-market` 建议把展示主页与源码安装子目录拆成两个字段，从数据模型上改善其他 monorepo 插件的展示体验；这不作为本次修正的前置条件。

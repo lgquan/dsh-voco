@@ -3,8 +3,8 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
-const packageRoot = resolve(repositoryRoot, 'packages/voice-app')
-const packagesRoot = resolve(packageRoot, '..')
+const sourcePackageRoot = resolve(repositoryRoot, 'packages/voice-app')
+const packagesRoot = resolve(sourcePackageRoot, '..')
 
 describe('dsh-voco distribution interface', () => {
   it('keeps every internal workspace package private', async () => {
@@ -19,21 +19,20 @@ describe('dsh-voco distribution interface', () => {
         },
       })))
 
-    expect(manifests.filter(({ manifest }) => manifest.private !== true)).toEqual([{
-      directory: 'voice-app',
-      manifest: expect.objectContaining({ name: '@flowingspring/dsh-voco' }),
-    }])
+    expect(manifests.every(({ manifest }) => manifest.private === true)).toBe(true)
   })
 
   it('exposes one public package with no internal runtime package dependencies', async () => {
-    const manifest = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8')) as {
+    const manifest = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8')) as {
       name?: string
+      private?: boolean
       dependencies?: Record<string, string>
       exports?: Record<string, unknown>
       dsh?: { bundle?: unknown; client?: unknown }
     }
 
     expect(manifest.name).toBe('@flowingspring/dsh-voco')
+    expect(manifest.private).toBeUndefined()
     expect(Object.keys(manifest.dependencies ?? {}).filter(name => name.startsWith('@flowingspring/'))).toEqual([])
     expect(manifest.dsh?.bundle).toBeDefined()
     expect(manifest.dsh?.client).toBeDefined()
@@ -49,7 +48,7 @@ describe('dsh-voco distribution interface', () => {
   })
 
   it('loads every runtime entry through the public package seam', async () => {
-    const patch = await readFile(resolve(packageRoot, 'cordis.patch.yml'), 'utf8')
+    const patch = await readFile(resolve(repositoryRoot, 'cordis.patch.yml'), 'utf8')
     const packageNames = [...patch.matchAll(/^\s+name: '([^']+)'$/gm)].map(match => match[1])
 
     expect(packageNames).toEqual([
@@ -63,7 +62,7 @@ describe('dsh-voco distribution interface', () => {
   })
 
   it('keeps the repository-root installation entry aligned with the public package', async () => {
-    const [repositoryManifest, packageManifest, repositoryPatch, packagePatch] = await Promise.all([
+    const [repositoryManifest, sourcePackageManifest, repositoryPatch, packagePatch] = await Promise.all([
       readFile(resolve(repositoryRoot, 'package.json'), 'utf8').then(text => JSON.parse(text) as {
         name?: string
         private?: boolean
@@ -71,38 +70,37 @@ describe('dsh-voco distribution interface', () => {
         dependencies?: Record<string, string>
         dsh?: { bundle?: { patch?: string } }
       }),
-      readFile(resolve(packageRoot, 'package.json'), 'utf8').then(text => JSON.parse(text) as {
+      readFile(resolve(sourcePackageRoot, 'package.json'), 'utf8').then(text => JSON.parse(text) as {
+        name?: string
+        private?: boolean
         version?: string
       }),
       readFile(resolve(repositoryRoot, 'cordis.patch.yml'), 'utf8'),
-      readFile(resolve(packageRoot, 'cordis.patch.yml'), 'utf8'),
+      readFile(resolve(sourcePackageRoot, 'cordis.patch.yml'), 'utf8'),
     ])
 
-    expect(repositoryManifest).toEqual(expect.objectContaining({
-      name: 'dsh-voco',
+    expect(repositoryManifest.name).toBe('@flowingspring/dsh-voco')
+    expect(repositoryManifest.private).toBeUndefined()
+    expect(repositoryManifest.version).toBe(sourcePackageManifest.version)
+    expect(repositoryManifest.dependencies).not.toHaveProperty('@flowingspring/dsh-voco')
+    expect(repositoryManifest.main).toBe('packages/voice-app/lib/index.js')
+    expect(repositoryManifest.types).toBe('packages/voice-app/lib/types/index.d.ts')
+    expect(sourcePackageManifest).toEqual(expect.objectContaining({
+      name: '@flowingspring/dsh-voco-source',
       private: true,
-      version: packageManifest.version,
-      dependencies: {
-        '@flowingspring/dsh-voco': packageManifest.version,
-      },
-      dsh: {
-        bundle: {
-          patch: './cordis.patch.yml',
-        },
-      },
     }))
     expect(repositoryPatch.replaceAll('\r\n', '\n')).toBe(packagePatch.replaceAll('\r\n', '\n'))
   })
 
   it('keeps public README release links aligned with the package version', async () => {
-    const manifest = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8')) as {
+    const manifest = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8')) as {
       version: string
     }
     const readmes = await Promise.all([
       resolve(repositoryRoot, 'README.md'),
       resolve(repositoryRoot, 'README.en.md'),
-      resolve(packageRoot, 'README.md'),
-      resolve(packageRoot, 'README.zh.md'),
+      resolve(sourcePackageRoot, 'README.md'),
+      resolve(sourcePackageRoot, 'README.zh.md'),
     ].map(path => readFile(path, 'utf8')))
     const tarballUrl = `/releases/download/v${manifest.version}/flowingspring-dsh-voco-${manifest.version}.tgz`
     const releaseUrl = `/releases/tag/v${manifest.version}`

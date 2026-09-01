@@ -6,7 +6,7 @@
 
 本次两个插件可以放在同一个 PR 中提交：
 
-- `@flowingspring/dsh-voco@0.3.11`
+- `@flowingspring/dsh-voco@0.3.12`（待发布）
 - `@flowingspring/dsh-workspace-memory@0.2.14`
 
 中文介绍写在各自 YAML 的 `description.zh` 中。市场仓库的中英文 README 由脚本自动生成，不要手工修改。
@@ -35,12 +35,12 @@
 | 检查项 | dsh-voco | dsh-workspace-memory |
 | --- | --- | --- |
 | GitHub 仓库 | `lgquan/dsh-voco` | `lgquan/dsh-workspace-memory` |
-| 当前 NPM 版本 | `0.3.11` | `0.2.14` |
-| `dsh.bundle` | 根 `package.json` 和 `packages/voice-app/package.json` 均已声明 | 根 `package.json` 已声明 |
+| 当前 NPM 版本 | `0.3.12`（待发布） | `0.2.14` |
+| `dsh.bundle` | 根 `package.json` 已声明，`packages/voice-app` 为私有构建源 | 根 `package.json` 已声明 |
 | 提交数 | 116，满足至少 10 次 | 21，满足至少 10 次 |
 | 最早本地提交 | 2026-08-24 | 2026-08-29 |
 | `dsh-plugin` topic | GitHub 页面可见 | 当前 GitHub 页面未发现，需要添加 |
-| GitHub Release `.tgz` | 待发布 `v0.3.11` 资产 | 已有 `v0.2.14` 资产 |
+| GitHub Release `.tgz` | 待发布 `v0.3.12` 资产 | 已有 `v0.2.14` 资产 |
 
 仓库年龄最终以市场 CI 查询到的 GitHub 仓库创建时间为准。按当前日期和项目历史判断，两个仓库应已满足 1 天要求。
 
@@ -48,7 +48,7 @@
 
 ### dsh-voco
 
-`dsh-voco` 虽然使用 monorepo 开发，但仓库根目录已经提供正式的 bundle 安装入口，并依赖同版本的公开包 `@flowingspring/dsh-voco`。因此市场 URL 应指向完整项目主页，不应暴露内部 `packages/voice-app` 目录。名称使用公开插件名 `lgquan/dsh-voco`。
+`dsh-voco` 使用 monorepo 开发，但仓库根目录本身就是公开的 `@flowingspring/dsh-voco` NPM 包和 bundle 安装入口。内部 `packages/voice-app` 仅作为私有构建源，不应暴露为市场子目录。市场 URL 应指向完整项目主页，名称使用公开插件名 `lgquan/dsh-voco`。
 
 文件名：
 
@@ -65,10 +65,9 @@ category: voice
 description:
   en: Continuous voice conversations for DSH with hands-free listening, push-to-talk, speech recognition, TTS replies, and background Agent delegation.
   zh: 为 DSH 提供持续语音对话，支持免提监听、按住说话、语音识别、TTS 语音回复和后台 Agent 任务委派。
-tarball: https://github.com/lgquan/dsh-voco/releases/download/v0.3.11/flowingspring-dsh-voco-0.3.11.tgz
 ```
 
-这段介绍只说明插件能够实现的语音交互效果和主要技术能力，不绑定具体 ASR 平台或模型，后续更换服务时不需要因此更新市场描述。
+这段介绍只说明插件能够实现的语音交互效果和主要技术能力，不绑定具体 ASR 平台或模型，后续更换服务时不需要因此更新市场描述。市场条目不填写固定版本的 `tarball`，安装统一跟随根目录公开 NPM 包的最新版本；GitHub Release 仅作为项目发布归档和人工下载渠道。
 
 ### dsh-workspace-memory
 
