@@ -100,6 +100,7 @@ name: lgquan/dsh-voco
 - 2026-09-02：根构建、类型检查和打包验证通过；分发测试已更新为根 `lib` 约束。NPM 尚未重新发布 `0.3.13`，因此市场 PR #4109 合并前，线上索引仍可能显示旧 GitHub tarball。
 - 2026-09-02：发布 `@flowingspring/dsh-voco@0.3.13` 成功。NPM registry 的 `latest` 已为 `0.3.13`，远程 manifest 的 `main`/`types` 分别为 `lib/index.js` 和 `lib/types/index.d.ts`；市场主索引仍显示旧 `v0.3.8` GitHub tarball，原因是 PR #4109 尚未合并或索引尚未刷新。
 - 2026-09-02：创建并发布 GitHub Release `v0.3.13`，上传 `flowingspring-dsh-voco-0.3.13.tgz`；README 中的 Release 链接和备用 tarball 下载地址现已可用。市场主索引仍需等待 PR #4109 合并后刷新为 NPM 安装命令。
+- 2026-09-02：检查 PR #4109 的失败日志，确认失败原因是条目 schema 不允许手写 `npm` 字段；市场通过 `scripts/probe-npm.mjs` 从仓库根 `package.json` 自动解析并校验 NPM 包。删除 `npm` 字段后提交 `57a8785`，常规 `PR check` 与 `Submission gate` 均已通过。PR 仍等待维护者合并，合并后需等待市场索引刷新并复核 `plugins.json` 的 NPM 安装命令。
 
 ## 后续低优先级优化
 
