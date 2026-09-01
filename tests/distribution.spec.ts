@@ -83,8 +83,8 @@ describe('dsh-voco distribution interface', () => {
     expect(repositoryManifest.private).toBeUndefined()
     expect(repositoryManifest.version).toBe(sourcePackageManifest.version)
     expect(repositoryManifest.dependencies).not.toHaveProperty('@flowingspring/dsh-voco')
-    expect(repositoryManifest.main).toBe('packages/voice-app/lib/index.js')
-    expect(repositoryManifest.types).toBe('packages/voice-app/lib/types/index.d.ts')
+    expect(repositoryManifest.main).toBe('lib/index.js')
+    expect(repositoryManifest.types).toBe('lib/types/index.d.ts')
     expect(sourcePackageManifest).toEqual(expect.objectContaining({
       name: '@flowingspring/dsh-voco-source',
       private: true,

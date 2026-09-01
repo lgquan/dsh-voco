@@ -15,9 +15,9 @@
 | `packages/voice-local` | SiliconFlow 语音识别和 Edge TTS 语音合成 Provider。 |
 | `packages/voice-assistant` | 语音前台路由、带上下文的任务重述、后台 Agent 绑定和口语化结果改写。 |
 | `packages/ui-voice` | 浏览器控制器、会话消息/任务卡片、静音状态、语音历史、文字桥接和侧栏标识。 |
-| `packages/voice-app` | 私有构建源，提供发布包入口的服务端插件和浏览器客户端组合实现。 |
+| `packages/voice-app` | 私有构建源，提供根公开包所需的服务端入口类型和兼容开发配置。 |
 
-用户安装仓库根目录的 `@flowingspring/dsh-voco`。根包通过 `packages/voice-app` 的构建配置组合服务端插件和浏览器客户端；其他 package 都是 workspace 内部模块，会在构建时打包进公开入口。
+用户安装仓库根目录的 `@flowingspring/dsh-voco`。根目录的 `tsdown.config.ts` 组合服务端插件和浏览器客户端，所有发布产物统一输出到根 `lib/`；其他 package 都是 workspace 内部模块，会在构建时打包进公开入口。`packages/voice-app` 不再是发布入口，也不会出现在 NPM 包的 `main`、`exports` 或 `files` 路径中。
 
 ## 运行拓扑
 

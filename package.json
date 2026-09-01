@@ -1,7 +1,7 @@
 {
   "name": "@flowingspring/dsh-voco",
   "description": "Persistent voice conversations for DSH with cloud speech recognition, Edge TTS, and background Agent delegation",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -23,25 +23,25 @@
     "url": "git+https://github.com/lgquan/dsh-voco.git"
   },
   "type": "module",
-  "main": "packages/voice-app/lib/index.js",
-  "types": "packages/voice-app/lib/types/index.d.ts",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./packages/voice-app/lib/types/index.d.ts",
-      "default": "./packages/voice-app/lib/index.js"
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
     },
     "./client": {
-      "default": "./packages/voice-app/lib/client.js"
+      "default": "./lib/client.js"
     },
     "./invariant": {
-      "types": "./packages/voice-app/lib/types/invariant.d.ts",
-      "default": "./packages/voice-app/lib/invariant.js"
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
     },
-    "./llm-tool-call-compat": "./packages/voice-app/lib/plugins/llm-tool-call-compat.js",
-    "./voice": "./packages/voice-app/lib/plugins/voice.js",
-    "./voice-local": "./packages/voice-app/lib/plugins/voice-local.js",
-    "./voice-assistant": "./packages/voice-app/lib/plugins/voice-assistant.js",
-    "./voice-web": "./packages/voice-app/lib/plugins/voice-web.js",
+    "./llm-tool-call-compat": "./lib/plugins/llm-tool-call-compat.js",
+    "./voice": "./lib/plugins/voice.js",
+    "./voice-local": "./lib/plugins/voice-local.js",
+    "./voice-assistant": "./lib/plugins/voice-assistant.js",
+    "./voice-web": "./lib/plugins/voice-web.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -50,19 +50,14 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "tsc -b && pnpm --dir packages/voice-app exec tsdown",
+    "build": "tsc -b && node scripts/copy-types.mjs && tsdown",
     "prepare": "pnpm run build",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
   "files": [
     "cordis.patch.yml",
-    "packages/voice-app/lib/index.js",
-    "packages/voice-app/lib/invariant.js",
-    "packages/voice-app/lib/client.js",
-    "packages/voice-app/lib/client.js.map",
-    "packages/voice-app/lib/plugins/*.js",
-    "packages/voice-app/lib/types/**/*.d.ts"
+    "lib"
   ],
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",

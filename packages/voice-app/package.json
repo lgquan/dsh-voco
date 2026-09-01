@@ -2,7 +2,7 @@
   "name": "@flowingspring/dsh-voco-source",
   "private": true,
   "description": "Persistent voice conversations for DSH with cloud speech recognition, Edge TTS, and background Agent delegation",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "keywords": [
     "deepseek-harness",
     "dsh",

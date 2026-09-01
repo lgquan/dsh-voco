@@ -6,7 +6,7 @@
 - 复现方式：在 dsh-market 搜索 `dsh-voco`
 - 相关模块或代码：`awesome-dsh-plugin/data/plugins/lgquan__dsh-voco--packages-voice-app.yml`
 - 状态：处理中
-- 验证情况：仓库根入口已实施并通过自动化、打包安装和真实 Web 启动验证；等待市场更正 PR 合并后完成最终验证
+- 验证情况：仓库根入口已实施并通过自动化、打包安装和真实 Web 启动验证；根包已发布到 NPM；等待市场更正 PR 合并后完成最终验证
 
 ## 问题描述
 
@@ -94,6 +94,11 @@ name: lgquan/dsh-voco
 - 2026-09-01：`pnpm test` 通过，15 个测试文件、138 项测试；`pnpm run typecheck` 和 `pnpm run build` 通过。`pnpm pack --dry-run` 确认包名为 `@flowingspring/dsh-voco@0.3.12`，入口、客户端、五个插件、类型文件、根 patch、README 和 LICENSE 均被打包；既有上游 source map 缺失警告仍存在但不影响结果。
 - 2026-09-01：从实际根 tarball 解包核对 `package.json`、主入口、客户端文件和根 `cordis.patch.yml` 均存在；随后正式发布 `@flowingspring/dsh-voco@0.3.12`，NPM `latest` 和 registry tarball 均已指向新版本。
 - 2026-09-01：使用 `dsh plugin --profile web remove @flowingspring/dsh-voco --config.minimum-release-age=0` 移除旧安装，再执行 `dsh plugin --profile web add @flowingspring/dsh-voco@0.3.12 --config.minimum-release-age=0` 重新安装。Web profile 清单显示 `@flowingspring/dsh-voco@0.3.12`，安装目录为实体目录而非本地 link/Junction；真实页面和语音功能验收待用户完成。
+- 2026-09-01：发布后重新读取 `https://awesome-dsh-plugin.com/plugins.json`，实时条目仍为 `npm: null`、`downloads: null`，安装地址仍是 GitHub `v0.3.8` tarball；同时 NPM registry 的 `latest` 已为 `0.3.12`，直接 NPM 安装已验证成功。结论是市场索引尚未同步新 PR，不能把市场现状误判为根包结构错误。
+- 2026-09-02：复核实际仓库布局，确认此前实现是“根目录公开包 + `packages/voice-app/lib` 兼容构建产物”，并非评估阶段示意的“根 `lib/` 完全承载构建产物”。因此市场和 NPM 的公开入口已不再是 `voice-app` 子包，但根包的 `main`/`exports` 仍然指向发布包内部的 `packages/voice-app/lib` 路径。
+- 2026-09-02：按用户要求完成物理发布边界迁移。新增根 `tsdown.config.ts`，构建产物统一输出到根 `lib/`；根 `package.json` 的 `main`、`types`、全部公开 `exports` 和 `files` 均改为根 `lib`，不再指向 `packages/voice-app/lib`。`packages/voice-app` 保留为私有源码/类型构建源，不再参与公开包入口。
+- 2026-09-02：根构建、类型检查和打包验证通过；分发测试已更新为根 `lib` 约束。NPM 尚未重新发布 `0.3.13`，因此市场 PR #4109 合并前，线上索引仍可能显示旧 GitHub tarball。
+- 2026-09-02：发布 `@flowingspring/dsh-voco@0.3.13` 成功。NPM registry 的 `latest` 已为 `0.3.13`，远程 manifest 的 `main`/`types` 分别为 `lib/index.js` 和 `lib/types/index.d.ts`；市场主索引仍显示旧 `v0.3.8` GitHub tarball，原因是 PR #4109 尚未合并或索引尚未刷新。
 
 ## 后续低优先级优化
 
