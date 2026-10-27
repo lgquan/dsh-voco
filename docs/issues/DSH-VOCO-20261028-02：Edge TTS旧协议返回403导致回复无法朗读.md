@@ -5,8 +5,8 @@
 - 发现日期：2026-10-28
 - 发现会话或复现方式：正式 CLI `web` profile 使用 `@flowingspring/dsh-voco@0.3.14`；ASR、文字发送和 Agent 回复正常，但回复没有语音朗读
 - 相关模块或代码：根 `package.json`、`packages/voice-local/src/edge-tts.ts`、`packages/voice-local/src/node-backend.ts`
-- 状态：处理中
-- 验证情况：线上依赖 `node-edge-tts@1.2.10` 的最小 TTS 探针稳定返回 WebSocket `403` 且产生 0 字节音频；升级到 `1.2.12` 后，从本仓库构建产物运行相同 `NodeSpeechBackend` 路径，事件完整到达 `tts.started -> tts.delta -> tts.done` 并生成 14,400 字节音频；待发布安装后由用户验收真实播放
+- 状态：已解决
+- 验证情况：线上依赖 `node-edge-tts@1.2.10` 的最小 TTS 探针稳定返回 WebSocket `403` 且产生 0 字节音频；升级到 `1.2.12` 后，从本仓库构建产物运行相同 `NodeSpeechBackend` 路径，事件完整到达 `tts.started -> tts.delta -> tts.done` 并生成 14,400 字节音频；用户从 NPM 安装 `0.3.15` 后完成真实语音测试，确认识别、回复和语音朗读均正常
 
 ## 问题描述
 
@@ -78,3 +78,4 @@ NPM 显示项目使用的 `1.2.10` 发布于 2026-02-05；上游随后发布 `1.
 - 2026-10-28：已发布 `@flowingspring/dsh-voco@0.3.15` 到 NPM；registry 的 `latest` 已指向 `0.3.15`，公开元数据中 `node-edge-tts` 为 `1.2.12`，tarball 为 `https://registry.npmjs.org/@flowingspring/dsh-voco/-/dsh-voco-0.3.15.tgz`。
 - 2026-10-28：已发布 [GitHub Release v0.3.15](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.15) 并上传 `flowingspring-dsh-voco-0.3.15.tgz`；GitHub 返回资产状态 `uploaded`，服务器计算的 SHA-256 与本地的 `249a3bccc36c5e77f5894f2d193e6a7219d9b69419b1621fdf4a48883b7c8a63` 一致。
 - 2026-10-28：执行 `dsh plugin --profile web add @flowingspring/dsh-voco@0.3.15 --config.minimumReleaseAge=0`，正式 profile 实际安装 Voco `0.3.15` 和 `node-edge-tts@1.2.12`；profile 锁文件记录 NPM 包解析，`dsh --profile web --dump-config` 成功列出 Voco 六个模块及 `webServer`/`webStartup` 注入。安装时的兼容警告仅来自已独立记录的 Memory `0.2.15`，不影响 Voco 安装结论。
+- 2026-10-28：用户在正式 `web` profile 中手动完成真实语音验收，确认语音识别、Agent 回复和 TTS 朗读均无问题；本问题标记为“已解决”。
