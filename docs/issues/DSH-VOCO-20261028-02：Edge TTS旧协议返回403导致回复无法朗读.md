@@ -74,3 +74,7 @@ NPM 显示项目使用的 `1.2.10` 发布于 2026-02-05；上游随后发布 `1.
 - 2026-10-28：串行执行全量验证：15 个测试文件、141 项测试全部通过，类型检查、peer 依赖检查、完整构建和 `git diff --check` 通过。曾并行运行两个会触发 `prepare` 的命令，两个构建进程同时创建 `lib/types` 导致其中一个 `EEXIST`；改为串行后稳定通过，该并发干扰与 TTS 修复无关。
 - 2026-10-28：`pnpm pack --json` 生成 `flowingspring-dsh-voco-0.3.15.tgz`，包内只包含根公开包的 `cordis.patch.yml`、`lib/`、包元数据、许可证和 README；包内版本为 `0.3.15`、`node-edge-tts` 为 `1.2.12`，SHA-256 为 `249a3bccc36c5e77f5894f2d193e6a7219d9b69419b1621fdf4a48883b7c8a63`。
 - 2026-10-28：对最终打包构建产物再次执行真实 Edge TTS 探针，继续完整收到 `ready -> tts.started -> tts.delta -> tts.done` 并生成 14,400 字节音频。
+- 2026-10-28：提交 `e837cb3` 已推送到 `origin/master`，Git 标签 `v0.3.15` 已推送。
+- 2026-10-28：已发布 `@flowingspring/dsh-voco@0.3.15` 到 NPM；registry 的 `latest` 已指向 `0.3.15`，公开元数据中 `node-edge-tts` 为 `1.2.12`，tarball 为 `https://registry.npmjs.org/@flowingspring/dsh-voco/-/dsh-voco-0.3.15.tgz`。
+- 2026-10-28：已发布 [GitHub Release v0.3.15](https://github.com/lgquan/dsh-voco/releases/tag/v0.3.15) 并上传 `flowingspring-dsh-voco-0.3.15.tgz`；GitHub 返回资产状态 `uploaded`，服务器计算的 SHA-256 与本地的 `249a3bccc36c5e77f5894f2d193e6a7219d9b69419b1621fdf4a48883b7c8a63` 一致。
+- 2026-10-28：执行 `dsh plugin --profile web add @flowingspring/dsh-voco@0.3.15 --config.minimumReleaseAge=0`，正式 profile 实际安装 Voco `0.3.15` 和 `node-edge-tts@1.2.12`；profile 锁文件记录 NPM 包解析，`dsh --profile web --dump-config` 成功列出 Voco 六个模块及 `webServer`/`webStartup` 注入。安装时的兼容警告仅来自已独立记录的 Memory `0.2.15`，不影响 Voco 安装结论。
