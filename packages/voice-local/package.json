@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "~3.18.5",
-    "node-edge-tts": "1.2.10"
+    "node-edge-tts": "1.2.12"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",

@@ -15,8 +15,8 @@ importers:
         specifier: ~3.18.5
         version: 3.18.5
       node-edge-tts:
-        specifier: 1.2.10
-        version: 1.2.10
+        specifier: 1.2.12
+        version: 1.2.12
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -248,8 +248,8 @@ importers:
         specifier: ~3.18.5
         version: 3.18.5
       node-edge-tts:
-        specifier: 1.2.10
-        version: 1.2.10
+        specifier: 1.2.12
+        version: 1.2.12
       ws:
         specifier: ^8.21.0
         version: 8.21.3
@@ -427,8 +427,8 @@ importers:
         specifier: ~3.18.5
         version: 3.18.5
       node-edge-tts:
-        specifier: 1.2.10
-        version: 1.2.10
+        specifier: 1.2.12
+        version: 1.2.12
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ~4.0.5
@@ -1921,8 +1921,8 @@ packages:
     resolution: {integrity: sha512-BCxXCMZDs/VLLh64SwKNw/me7Qx1I7Be4qxWwYVRRm8tJoOB8fL7qg6CmXhSXeUqsKt72t8RaKCX4EN+5nocVg==}
     engines: {node: '>=20'}
 
-  node-edge-tts@1.2.10:
-    resolution: {integrity: sha512-bV2i4XU54D45+US0Zm1HcJRkifuB3W438dWyuJEHLQdKxnuqlI1kim2MOvR6Q3XUQZvfF9PoDyR1Rt7aeXhPdQ==}
+  node-edge-tts@1.2.12:
+    resolution: {integrity: sha512-tvopsQ+XkxHGHM58GUVDM7iwzxVivjqSJb948xg2F0q9r+OWO7bSrJkHnJ0e7BPTxhPiTrxK+9zsl4CL5H5KbQ==}
     hasBin: true
 
   obug@2.1.4:
@@ -3586,7 +3586,7 @@ snapshots:
       node-addon-require-builtin-win32-ia32-msvc: 0.1.9
       node-addon-require-builtin-win32-x64-msvc: 0.1.9
 
-  node-edge-tts@1.2.10:
+  node-edge-tts@1.2.12:
     dependencies:
       https-proxy-agent: 7.0.6
       ws: 8.21.3

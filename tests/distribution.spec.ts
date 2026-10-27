@@ -7,6 +7,7 @@ const sourcePackageRoot = resolve(repositoryRoot, 'packages/voice-app')
 const packagesRoot = resolve(sourcePackageRoot, '..')
 const supportedDshPeerRange = '^0.2.1-rc.2'
 const supportedDshDevelopmentVersion = '0.2.1-rc.2'
+const supportedEdgeTtsVersion = '1.2.12'
 const removedDshPackages = new Set([
   '@deepseek-ai/dsh-agent-presets',
   '@deepseek-ai/dsh-client-runtime',
@@ -63,6 +64,20 @@ describe('dsh-voco distribution interface', () => {
       })))
 
     expect(manifests.every(({ manifest }) => manifest.private === true)).toBe(true)
+  })
+
+  it('pins the Edge TTS client that implements the current upstream protocol', async () => {
+    const manifests = await readWorkspaceManifests()
+    const consumers = manifests.flatMap(manifest => {
+      const version = manifest.dependencies?.['node-edge-tts']
+      return version === undefined ? [] : [[manifest.name, version] as const]
+    }).sort(([left], [right]) => String(left).localeCompare(String(right)))
+
+    expect(consumers).toEqual([
+      ['@flowingspring/dsh-voco', supportedEdgeTtsVersion],
+      ['@flowingspring/dsh-voco-source', supportedEdgeTtsVersion],
+      ['@flowingspring/dsh-voice-local', supportedEdgeTtsVersion],
+    ])
   })
 
   it('exposes one public package with no internal runtime package dependencies', async () => {
