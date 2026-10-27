@@ -1,7 +1,7 @@
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
-import {
-  createSnapshotStore, type SettingsScope, type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 export const VOCO_SETTINGS_NAMESPACE = 'voice-local'
 export const SILICONFLOW_API_KEY_REF = 'SILICONFLOW_API_KEY'
@@ -30,14 +30,11 @@ export class VocoSettingsController {
   private draft = ''
   private saving = false
   private failed = false
-  private credential = { configured: false, writable: true }
+  private available = false
+  private credential = { configured: false, writable: false }
 
-  constructor(
-    private readonly scope: SettingsScope<unknown>,
-    private readonly api: Pick<IApiClient, 'credentials'>,
-  ) {
+  constructor(private readonly credentials: Context['remote']['credentials']) {
     this.store = createSnapshotStore(this.projection())
-    scope.subscribe(() => { this.publish() })
     void this.readCredential()
   }
 
@@ -63,10 +60,9 @@ export class VocoSettingsController {
   }
 
   private projection(): VocoSettingsState {
-    const snapshot = this.scope.getSnapshot()
     return {
-      available: snapshot.status === 'ready',
-      writable: snapshot.writable,
+      available: this.available,
+      writable: this.credential.writable,
       dirty: this.draft.trim() !== '',
       saving: this.saving,
       failed: this.failed,
@@ -79,30 +75,31 @@ export class VocoSettingsController {
   private publish(): void { this.store.set(this.projection()) }
 
   private async readCredential(): Promise<void> {
-    let response
+    let result
     try {
-      response = await this.api.credentials.describe({ refs: [SILICONFLOW_API_KEY_REF] })
+      result = await this.credentials.describe([SILICONFLOW_API_KEY_REF])
     } catch {
       return
     }
-    if (!response.result.ok) return
-    const view = response.result.value.credentials[SILICONFLOW_API_KEY_REF]
+    if (!result.ok) return
+    const view = result.value[SILICONFLOW_API_KEY_REF]
+    this.available = true
     this.credential = {
       configured: view?.configured ?? false,
-      writable: view?.writable ?? true,
+      writable: view?.writable ?? false,
     }
     this.publish()
   }
 
   private async save(): Promise<void> {
     const value = this.draft.trim()
-    if (value === '' || this.saving || !this.scope.getSnapshot().writable || !this.credential.writable) return
+    if (value === '' || this.saving || !this.available || !this.credential.writable) return
     this.saving = true
     this.failed = false
     this.publish()
     try {
-      const response = await this.api.credentials.set({ ref: SILICONFLOW_API_KEY_REF, value })
-      if (!response.result.ok) {
+      const result = await this.credentials.set(SILICONFLOW_API_KEY_REF, value)
+      if (!result.ok) {
         this.failed = true
         return
       }

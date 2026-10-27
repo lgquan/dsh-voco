@@ -27,7 +27,6 @@ const serverPlugins: UserConfig = {
 
 export default clientBundle('@flowingspring/dsh-voco', [
   'packages/voice-app/src/index.ts',
-  'packages/voice-app/src/invariant.ts',
 ], {
   companions: [serverPlugins],
   clientEntry: {

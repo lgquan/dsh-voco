@@ -1,4 +1,5 @@
-import type { ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 
 /** Browser-visible lifecycle of the one active voice transport. */
 export type VoiceClientState = 'off' | 'connecting' | 'listening' | 'speaking' | 'error'

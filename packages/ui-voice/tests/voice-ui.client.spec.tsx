@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionEventLikeEntry, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  ChatConversationViewNode, ClientContext, ConversationEventInput, ConversationNodeDefinition,
-  ConversationViewDefinition, SessionId, SessionListState, WorkspaceId, WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-runtime/client'
+  ConversationNodeDefinition, ConversationViewDefinition,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { VoiceTaskId, VoiceUtteranceId } from '@flowingspring/dsh-voice'
 import {
   VoiceControl, type VoiceControlInjected, type VoiceControlProps,
@@ -67,12 +71,13 @@ const chatViewDefinition: ConversationViewDefinition<ChatConversationViewNode, C
   },
 }
 
-function at(seq: number, type: string, data: unknown): ConversationEventInput {
-  return { event: { seq, time: seq * 100, type, data } as ConversationEventInput['event'], view: undefined }
+function at(seq: number, type: string, data: unknown): SessionEventLikeEntry {
+  return { type: 'event', event: { seq, time: seq * 100, type, data } as SessionEventLikeEntry['event'] }
 }
 
-function assembler(events: readonly ConversationEventInput[], hasMore = false): ConversationNodeAssembler {
+function assembler(events: readonly SessionEventLikeEntry[], hasMore = false): ConversationNodeAssembler {
   const value = new ConversationNodeAssembler(new TestEventDefinitions(), new TestViewDefinitions())
+  value.activateTarget('chat')
   value.replaceWindow(events, hasMore)
   value.flush()
   return value
@@ -247,15 +252,12 @@ function listState(ids: SessionId[] = [VOICE_SESSION]): SessionListState {
     byId: Object.fromEntries(ids.map(id => [id, {
       id, displayTitle: String(id), running: false, blank: false, updatedAt: 0,
     }])),
-    current: VOICE_SESSION,
     phase: 'ready',
-    subagentsByParent: {},
-    jobsBySession: {},
-    currentAddress: undefined,
+    projectionsBySession: {},
   }
 }
 
-function workspaceState(): WorkspaceListState {
+function workspaceState(): WorkspaceSnapshot {
   return {
     items: [{
       workspaceId: 'workspace-1' as WorkspaceId,
@@ -266,12 +268,11 @@ function workspaceState(): WorkspaceListState {
       updatedAt: '2026-01-01T00:00:00.000Z',
     }],
     archivedSessionIds: [],
+    pinnedSessionIds: [],
     state: 'idle',
     phase: 'ready',
     error: null,
-    baselinesReady: true,
-    recentWorkspaceId: 'workspace-1' as WorkspaceId,
-  } as WorkspaceListState
+  } as WorkspaceSnapshot
 }
 
 function runtimeProps() {
@@ -282,7 +283,7 @@ function runtimeProps() {
     useInput: vi.fn(),
     inputActions: {},
     useSessions: (selector: (state: SessionListState) => unknown) => selector(listState()),
-    useWorkspaces: (selector: (state: WorkspaceListState) => unknown) => selector(workspaceState()),
+    useWorkspaces: (selector: (state: WorkspaceSnapshot) => unknown) => selector(workspaceState()),
     t: zhT,
   }
 }
@@ -359,9 +360,16 @@ describe('Voice UI surfaces', () => {
     expect(cancelTask).toHaveBeenCalledWith('task-1')
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '查看后台详情' }).disabled).toBe(true)
     const nestedState = listState()
-    nestedState.subagentsByParent = {
-      [VOICE_SESSION]: { entries: [{ kind: 'child', id: TASK_SESSION }] },
-    } as typeof nestedState.subagentsByParent
+    nestedState.byId[TASK_SESSION] = {
+      id: TASK_SESSION,
+      displayTitle: '后台任务',
+      parentId: VOICE_SESSION,
+      origin: 'subagent',
+      running: true,
+      retainedBy: {},
+      blank: false,
+      updatedAt: 0,
+    }
     view.rerender(<VoiceDelegationView {...absent} useSessions={selector => selector(nestedState)} />)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '查看后台详情' }).disabled).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: '查看后台详情' }))
@@ -409,14 +417,6 @@ describe('Voice UI surfaces', () => {
 
   it('keeps child sessions out of the sidebar while refreshing the catalog for top task cards', async () => {
     const state = listState()
-    state.subagentsByParent = {
-      [VOICE_SESSION]: {
-        entries: [{ kind: 'child', id: TASK_SESSION, mode: 'continuable', label: '后台任务' }],
-        parentAvailable: true,
-        state: 'ready',
-        error: null,
-      },
-    } as typeof state.subagentsByParent
     const refreshSubagents = vi.fn()
     render(<>
       <div role="tree"><div key={VOICE_SESSION} role="treeitem" className="sessionRow"><span className="title">语音会话</span></div></div>
@@ -583,53 +583,38 @@ describe('Voice UI assembly', () => {
     const effects: (() => unknown)[] = []
     const unregisterLocale = vi.fn()
     const registerLocale = vi.fn().mockReturnValue(unregisterLocale)
-    const open = vi.fn()
-    const openSubagent = vi.fn()
+    const openSession = vi.fn()
     let archivedSessionIds: SessionId[] = []
     const refreshSubagents = vi.fn().mockResolvedValue(undefined)
     const subagentAddress = vi.fn((id: SessionId) => id === TASK_SESSION
       ? { parentSessionId: VOICE_SESSION, childSessionId: TASK_SESSION, mode: 'continuable' as const }
       : undefined)
-    const connectWorkspace = vi.fn().mockResolvedValue(FRESH_VOICE_SESSION)
     const start = vi.spyOn(VoiceController.prototype, 'start').mockResolvedValue(undefined)
     const stop = vi.spyOn(VoiceController.prototype, 'stop').mockResolvedValue(undefined)
     const retry = vi.spyOn(VoiceController.prototype, 'retry').mockResolvedValue(undefined)
     const setInputMuted = vi.spyOn(VoiceController.prototype, 'setInputMuted').mockImplementation(() => undefined)
     const input = {
-      state: { getSnapshot: () => ({ draft: '', imageIds: [] }) },
+      state: { getSnapshot: () => ({ draft: '', attachmentIds: [] }) },
       setDraft: vi.fn(), submit: vi.fn(), notify: vi.fn(),
     }
     const credentialApi = {
       describe: vi.fn().mockResolvedValue({
-        result: { ok: true, value: { credentials: { SILICONFLOW_API_KEY: { configured: false, writable: true } } } },
+        ok: true, value: { SILICONFLOW_API_KEY: { configured: false, writable: true } },
       }),
       set: vi.fn(),
-    }
-    const settingsScope = {
-      getSnapshot: () => ({
-        status: 'ready', value: {}, base: {}, user: undefined, revision: 0, writable: true, mode: 'host',
-      }),
-      subscribe: () => () => undefined,
-      set: vi.fn(),
-      unset: vi.fn(),
     }
     const disposeCredentialListener = vi.fn()
     const ctx = {
-      get: (key: string) => key === 'remote.workspaceRegistry'
-        ? {}
-        : key === 'connection'
-          ? { api: { credentials: credentialApi } }
-          : undefined,
-      settingsScope: { bind: () => settingsScope },
-      remote: { $on: vi.fn().mockReturnValue(disposeCredentialListener) },
+      remote: { $on: vi.fn().mockReturnValue(disposeCredentialListener), credentials: credentialApi },
       sessions: {
-        open, openSubagent, subagentAddress, navigationAddress: subagentAddress, refreshSubagents,
+        subagentAddress, navigationAddress: subagentAddress, refreshSubagents,
         scope: () => ({}), list: { getSnapshot: () => listState() },
       },
       conversation: { input: { for: () => input } },
-      workspaces: { list: { getSnapshot: () => ({ ...workspaceState(), archivedSessionIds }) }, connectWorkspace },
-      locale: { register: registerLocale },
-      conversationEvents: { register: (definition: ConversationNodeDefinition) => { definitions.push(definition) } },
+      workspaces: { list: { getSnapshot: () => ({ ...workspaceState(), archivedSessionIds }) } },
+      uiWorkspace: { openSession },
+      locale: { register: registerLocale, bind: () => zhT },
+      uiConversation: { events: { register: (definition: ConversationNodeDefinition) => { definitions.push(definition) } } },
       effect: (factory: () => unknown) => { effects.push(factory) },
       slots: {
         inject: (_name: string, factory: () => unknown) => { factory() },
@@ -638,11 +623,11 @@ describe('Voice UI assembly', () => {
           return () => undefined
         },
       },
-    } as unknown as ClientContext
+    } as unknown as Context
 
     expect(inject).toEqual([
-      'conversation', 'conversationEvents', 'slots', 'sessions', 'workspaces', 'locale', 'remote',
-      'connection', 'settingsScope',
+      'conversation', 'uiConversation', 'slots', 'sessions', 'workspaces', 'uiWorkspace', 'locale', 'remote',
+      'remote.credentials',
     ])
     apply(ctx)
     expect(definitions).toEqual([voiceUtteranceDefinition, voiceDelegationDefinition])
@@ -652,7 +637,7 @@ describe('Voice UI assembly', () => {
       ['shell.overlay', 'voice-session-markers'],
       ['conversation.chat.node', 'voice-utterance'],
       ['conversation.chat.node', 'voice-delegation'],
-      ['settings.plugin.item', 'voice-local'],
+      ['settings.plugins.tab', 'voice-local'],
     ])
     expect(registrations.every(entry => entry.options.locale === NS)).toBe(true)
 
@@ -663,8 +648,7 @@ describe('Voice UI assembly', () => {
       setVoiceMuted(muted: boolean): void
     })()
     await control.startVoice(VOICE_SESSION)
-    expect(connectWorkspace).not.toHaveBeenCalled()
-    expect(open).toHaveBeenCalledWith(VOICE_SESSION)
+    expect(openSession).toHaveBeenCalledWith(VOICE_SESSION)
     expect(start).toHaveBeenCalledWith(VOICE_SESSION)
     await control.retryVoice()
     control.setVoiceMuted(true)
@@ -685,14 +669,14 @@ describe('Voice UI assembly', () => {
     expect(utterance.hooks.voice).toBeInstanceOf(VoiceController)
     const delegation = (registrations[4]!.options.inject as () => { openSession(id: SessionId): void })()
     delegation.openSession(TASK_SESSION)
-    expect(openSubagent).toHaveBeenLastCalledWith({
+    expect(openSession).toHaveBeenLastCalledWith({
       parentSessionId: VOICE_SESSION,
       childSessionId: TASK_SESSION,
       mode: 'continuable',
     })
     archivedSessionIds = [VOICE_SESSION]
     delegation.openSession(TASK_SESSION)
-    expect(openSubagent).toHaveBeenCalledTimes(1)
+    expect(openSession).toHaveBeenCalledTimes(2)
 
     const disposeLocale = effects[0]!() as () => void
     expect(registerLocale).toHaveBeenCalledWith(NS, { zh, en })
@@ -720,45 +704,29 @@ describe('Voice UI assembly', () => {
 
   it('starts voice from the source session even when it has no workspace', async () => {
     const registrations: { options: Record<string, unknown> }[] = []
-    const connectWorkspace = vi.fn()
-    const open = vi.fn()
+    const openSession = vi.fn()
     const source = listState()
     source.byId[VOICE_SESSION] = { ...source.byId[VOICE_SESSION]!, cwd: '/ungrouped' }
     const sessionSnapshot = source
     const start = vi.spyOn(VoiceController.prototype, 'start').mockResolvedValue(undefined)
     const input = {
-      state: { getSnapshot: () => ({ draft: '', imageIds: [] }) },
+      state: { getSnapshot: () => ({ draft: '', attachmentIds: [] }) },
       setDraft: vi.fn(), submit: vi.fn(), notify: vi.fn(),
     }
-    const settingsScope = {
-      getSnapshot: () => ({
-        status: 'ready', value: {}, base: {}, user: undefined, revision: 0, writable: true, mode: 'host',
-      }),
-      subscribe: () => () => undefined,
-      set: vi.fn(),
-      unset: vi.fn(),
-    }
     const ctx = {
-      get: (key: string) => key === 'connection' ? {
-        api: {
-          credentials: {
-            describe: vi.fn().mockResolvedValue({
-              result: { ok: true, value: { credentials: {} } },
-            }),
-            set: vi.fn(),
-          },
+      remote: {
+        $on: () => () => undefined,
+        credentials: {
+          describe: vi.fn().mockResolvedValue({ ok: true, value: {} }),
+          set: vi.fn(),
         },
-      } : undefined,
-      settingsScope: { bind: () => settingsScope },
-      remote: { $on: () => () => undefined },
-      sessions: { open, scope: () => ({}), list: { getSnapshot: () => sessionSnapshot } },
-      conversation: { input: { for: () => input } },
-      workspaces: {
-        list: { getSnapshot: () => ({ ...workspaceState(), items: [] }) },
-        connectWorkspace,
       },
-      locale: { register: () => () => undefined },
-      conversationEvents: { register: () => undefined },
+      sessions: { scope: () => ({}), list: { getSnapshot: () => sessionSnapshot } },
+      conversation: { input: { for: () => input } },
+      workspaces: { list: { getSnapshot: () => ({ ...workspaceState(), items: [] }) } },
+      uiWorkspace: { openSession },
+      locale: { register: () => () => undefined, bind: () => zhT },
+      uiConversation: { events: { register: () => undefined } },
       effect: () => undefined,
       slots: {
         inject: (_name: string, factory: () => unknown) => { factory() },
@@ -767,13 +735,12 @@ describe('Voice UI assembly', () => {
           return () => undefined
         },
       },
-    } as unknown as ClientContext
+    } as unknown as Context
 
     apply(ctx)
     const control = (registrations[0]!.options.inject as () => VoiceControlInjected)()
     await control.startVoice(VOICE_SESSION)
-    expect(connectWorkspace).not.toHaveBeenCalled()
-    expect(open).toHaveBeenCalledWith(VOICE_SESSION)
+    expect(openSession).toHaveBeenCalledWith(VOICE_SESSION)
     expect(start).toHaveBeenCalledWith(VOICE_SESSION)
   })
 })

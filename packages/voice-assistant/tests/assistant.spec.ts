@@ -6,7 +6,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import LlmRuntime, {
-  CallId,
+  ToolCallId,
   LlmAdapter,
   createAssistantMessage,
   type GenerateOptions,
@@ -587,7 +587,7 @@ describe('voice assistant driver', () => {
     } })
     await vi.waitFor(() => { expect(createdAgents).toHaveLength(1) })
     const child = createdAgents[0]!
-    expect(child.session.events.find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({
+    expect(child.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({
       label: '修复 TypeScript 构建与流程 👨‍👩‍👧‍👦',
     })
     expect(titles.get(child.session)).toBe('修复 TypeScript 构建与流程 👨‍👩‍👧‍👦')
@@ -724,7 +724,7 @@ describe('voice assistant driver', () => {
 
     const progress = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('rewrite-progress'),
+      callId: ToolCallId('rewrite-progress'),
       name: 'send_voice_message',
       arguments: {
         type: 'progress',
@@ -741,7 +741,7 @@ describe('voice assistant driver', () => {
 
     const complete = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('rewrite-complete'),
+      callId: ToolCallId('rewrite-complete'),
       name: 'send_voice_message',
       arguments: {
         type: 'result',
@@ -991,8 +991,8 @@ describe('voice assistant driver', () => {
     expect(createdAgents).toHaveLength(2)
     const second = createdAgents[1]
     if (second === undefined) throw new Error('successor Agent was not created')
-    expect(second.session.events).toHaveLength(2)
-    const descriptor = second.session.events.find(event => event.type === 'subagent/descriptor')
+    expect(second.session.snapshotEvents()).toHaveLength(2)
+    const descriptor = second.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')
     expect(descriptor?.data).toMatchObject({
       mode: 'continuable',
       provider: 'voice-assistant',
@@ -1012,14 +1012,14 @@ describe('voice assistant driver', () => {
       expect(handoffText.text).toContain('<voice_task_handoff>')
       expect(handoffText.text.length).toBeLessThanOrEqual(600 + 80)
     }
-    expect(source.events.flatMap(event => (
+    expect(source.snapshotEvents().flatMap(event => (
       event.type === 'voice/task-session-bound' ? [event.data.taskSessionId] : []
     ))).toEqual([first.session.id, second.session.id])
-    const latestDelegation = source.events.findLast(event => event.type === 'voice/task-delegated')
+    const latestDelegation = source.snapshotEvents().findLast(event => event.type === 'voice/task-delegated')
     expect(latestDelegation?.type === 'voice/task-delegated'
       ? latestDelegation.data.taskSessionId
       : undefined).toBe(second.session.id)
-    const latestBinding = source.events.findLast(event => event.type === 'voice/agent-binding-state')
+    const latestBinding = source.snapshotEvents().findLast(event => event.type === 'voice/agent-binding-state')
     expect(latestBinding?.type === 'voice/agent-binding-state' ? latestBinding.data : undefined).toMatchObject({
       voiceConversationId: source.id,
       agentSessionId: second.session.id,
@@ -1130,10 +1130,10 @@ describe('voice assistant driver', () => {
     emit?.({ type: 'output_text.delta', utteranceId: assistantUtterance, responseId, text: '我会' })
     emit?.({ type: 'output_text.done', utteranceId: assistantUtterance, responseId, text: '我会继续和你对话。' })
     await settle()
-    const voiceEvents = session.events.filter(event => event.type.startsWith('voice/'))
+    const voiceEvents = session.snapshotEvents().filter(event => event.type.startsWith('voice/'))
     expect(voiceEvents.length).toBeGreaterThan(0)
     expect(voiceEvents.every(event => event.ignorable !== true)).toBe(true)
-    expect(session.events.flatMap(event => event.type === 'voice/utterance-end' ? [event.data] : [])).toEqual([
+    expect(session.snapshotEvents().flatMap(event => event.type === 'voice/utterance-end' ? [event.data] : [])).toEqual([
       {
         utteranceId: VoiceUtteranceId('frontend-chat'),
         role: 'user',
@@ -1173,7 +1173,7 @@ describe('voice assistant driver', () => {
     await settle()
     const firstTask = createdAgents[0]
     if (firstTask === undefined) throw new Error('delegated Agent was not created')
-    expect(firstTask.session.events.find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({
+    expect(firstTask.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({
       mode: 'one-shot',
       provider: 'voice-assistant',
       label: '检查仓库并报告结果',
@@ -1188,7 +1188,7 @@ describe('voice assistant driver', () => {
     expect(delegationBlock.text).not.toContain('<delegation_id>')
     expect(firstTask.inject).toHaveBeenCalledTimes(1)
     expect(firstTask.inject.mock.calls[0]?.[0]).toMatchObject({
-      source: { kind: 'plugin', plugin: 'voice-assistant' },
+      source: { kind: 'voice-assistant' },
       content: [{ type: 'text', text: '语音转写补充上下文：用户刚才说的是语音模块' }],
     })
     const accepted = completions.find(item => item.callId === 'call-start')?.result
@@ -1225,7 +1225,7 @@ describe('voice assistant driver', () => {
     expect(completions.find(item => item.callId === 'call-second')?.result).toMatchObject({ kind: 'rejected', code: 'task_active' })
     expect(completions.find(item => item.callId === 'call-wrong-message')?.result).toMatchObject({ kind: 'rejected', code: 'task_not_found' })
     expect(firstTask.steer).toHaveBeenCalledTimes(1)
-    expect(firstTask.steer.mock.calls[0]?.[0].source).toEqual({ kind: 'plugin', plugin: 'voice-assistant' })
+    expect(firstTask.steer.mock.calls[0]?.[0].source).toEqual({ kind: 'voice-assistant' })
     expect(firstTask.steer.mock.calls[0]?.[0].content).toEqual([{
       type: 'text',
       text: '只检查语音模块',
@@ -1240,7 +1240,7 @@ describe('voice assistant driver', () => {
 
     const statusResult = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('voice-status'),
+      callId: ToolCallId('voice-status'),
       name: 'send_voice_message',
       arguments: {
         type: 'progress',
@@ -1262,7 +1262,7 @@ describe('voice assistant driver', () => {
 
     const silentWarning = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('voice-warning-silent'),
+      callId: ToolCallId('voice-warning-silent'),
       name: 'send_voice_message',
       arguments: {
         type: 'warning',
@@ -1285,7 +1285,7 @@ describe('voice assistant driver', () => {
 
     const completeResult = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('voice-complete'),
+      callId: ToolCallId('voice-complete'),
       name: 'send_voice_message',
       arguments: {
         type: 'result',
@@ -1300,14 +1300,14 @@ describe('voice assistant driver', () => {
     expect(requestResponse).toHaveBeenCalledTimes(1)
     const duplicateComplete = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('voice-complete-duplicate'),
+      callId: ToolCallId('voice-complete-duplicate'),
       name: 'send_voice_message',
       arguments: { channel: 'COMPLETE', detail: '重复结果' },
       agent: firstTask.agent,
     })
     const lateStatus = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('voice-status-late'),
+      callId: ToolCallId('voice-status-late'),
       name: 'send_voice_message',
       arguments: { channel: 'STATUS', detail: '过晚状态' },
       agent: firstTask.agent,
@@ -1344,10 +1344,10 @@ describe('voice assistant driver', () => {
       ],
     })
 
-    const loggedObservations = session.events.flatMap(event =>
+    const loggedObservations = session.snapshotEvents().flatMap(event =>
       event.type === 'voice/task-observation' ? [event.data] : [])
     expect(loggedObservations).toEqual(observations)
-    const delegated = session.events.find(event => event.type === 'voice/task-delegated')
+    const delegated = session.snapshotEvents().find(event => event.type === 'voice/task-delegated')
     expect(delegated?.data).toEqual({
       taskId,
       taskSessionId: firstTask.session.id,
@@ -1405,7 +1405,7 @@ describe('voice assistant driver', () => {
     })
     const detachedStatus = await ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('voice-status-detached'),
+      callId: ToolCallId('voice-status-detached'),
       name: 'send_voice_message',
       arguments: { channel: 'STATUS', detail: '断线期间仍在执行。' },
       agent: secondTask.agent,
@@ -1437,7 +1437,7 @@ describe('voice assistant driver', () => {
     await settle()
     expect(observations.at(-1)).toMatchObject({ taskId: cancelTaskId, status: 'cancelled' })
     expect(requestResponse).toHaveBeenCalledTimes(3)
-    expect(session.events.flatMap(event =>
+    expect(session.snapshotEvents().flatMap(event =>
       event.type === 'voice/task-observation' ? [event.data] : [])).toEqual(observations)
 
     failNextFollowup = true

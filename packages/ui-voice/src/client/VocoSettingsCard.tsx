@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type { VocoSettingsFace } from './voco-settings-controller.ts'
 import css from './VocoSettingsCard.module.css'
 
 export type VocoSettingsCardProps =
-  PropsRuntime<'settings.plugin.item'> & PropsLocale<'voice'> & InjectFace<VocoSettingsFace>
+  PropsRuntime<'settings.plugins.tab'> & PropsLocale<'voice'> & InjectFace<VocoSettingsFace>
 
 /** Official plugin-settings slot contribution for the Voco credential. */
 export function VocoSettingsCard({ useVocoSettings, editApiKey, save, discard, t }: VocoSettingsCardProps) {
@@ -18,7 +19,7 @@ export function VocoSettingsCard({ useVocoSettings, editApiKey, save, discard, t
   const saveDisabled = !state.dirty || disabled
 
   return (
-    <li className={`${css.card} ${open ? css.cardOpen : ''}`}>
+    <section className={`${css.card} ${open ? css.cardOpen : ''}`}>
       <button
         type="button"
         className={css.header}
@@ -31,7 +32,7 @@ export function VocoSettingsCard({ useVocoSettings, editApiKey, save, discard, t
           <span className={css.description}>{t('settings.description')}</span>
         </span>
         {state.dirty && <span className={css.pending}>{t('settings.unsaved')}</span>}
-        <IconChevronDownOutline14 className={`${css.chevron} ${open ? css.chevronOpen : ''}`} />
+        <IconChevronDownOutlineMedium className={`${css.chevron} ${open ? css.chevronOpen : ''}`} />
       </button>
       {open && (
         <div className={css.body}>
@@ -82,6 +83,6 @@ export function VocoSettingsCard({ useVocoSettings, editApiKey, save, discard, t
           </div>
         </div>
       )}
-    </li>
+    </section>
   )
 }

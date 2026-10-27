@@ -1,11 +1,19 @@
 /** Browser voice UI assembly. @module @flowingspring/dsh-client-ui-voice/client */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
+import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { VoiceControl, type VoiceControlInjected } from './VoiceControl.tsx'
 import {
   VoiceDelegationView, type VoiceDelegationInjected,
@@ -32,8 +40,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 export const inject = [
-  'conversation', 'conversationEvents', 'slots', 'sessions', 'workspaces', 'locale', 'remote',
-  'connection', 'settingsScope',
+  'conversation', 'uiConversation', 'slots', 'sessions', 'workspaces', 'uiWorkspace', 'locale',
+  'remote', 'remote.credentials',
 ]
 
 type SessionAddress = {
@@ -48,7 +56,7 @@ type SessionAddress = {
  * same model directory as the parent while retaining navigationAddress for
  * child routing and breadcrumbs.
  */
-function enableChildModelSelection(ctx: ClientContext): void {
+function enableChildModelSelection(ctx: Context): void {
   const sessions = ctx.sessions as typeof ctx.sessions & {
     subagentAddress: (sessionId: SessionId) => SessionAddress | undefined
     navigationAddress?: (sessionId: SessionId) => SessionAddress | undefined
@@ -62,7 +70,7 @@ function enableChildModelSelection(ctx: ClientContext): void {
 }
 
 /** Refresh the Host-backed Session list when the runtime exposes its baseline pull. */
-function refreshSessions(ctx: ClientContext): void {
+function refreshSessions(ctx: Context): void {
   // `refresh()` exists on the concrete SessionRuntime used by dsh Web, but is
   // intentionally omitted from the narrow feature-facing ISessions contract.
   // Keep this compatibility bridge optional for older runtimes and fixtures.
@@ -74,11 +82,8 @@ function refreshSessions(ctx: ClientContext): void {
 }
 
 /** Mount root transport controls and durable Voice conversation renderers. @param ctx - browser context. */
-export function apply(ctx: ClientContext): void {
-  const vocoSettings = new VocoSettingsController(
-    ctx.settingsScope.bind({ namespace: VOCO_SETTINGS_NAMESPACE }),
-    ctx.get('connection').api,
-  )
+export function apply(ctx: Context): void {
+  const vocoSettings = new VocoSettingsController(ctx.remote.credentials)
   const controller = new VoiceController({
     onConversationStarted: () => {
       // Voice events are appended by the Host, while the browser's session
@@ -92,11 +97,11 @@ export function apply(ctx: ClientContext): void {
   const textSubmit = new VoiceTextSubmitBridge(controller, (sessionId) => {
     const scope = ctx.sessions.scope(sessionId)
     if (scope === undefined) throw new Error(`voice input session "${sessionId}" is unavailable`)
-    return ctx.conversation.input.for(scope) as VoiceTextInput
+    return ctx.conversation.input.for(scope as unknown as Context) as unknown as VoiceTextInput
   })
   const stopVoice = (): Promise<void> => controller.stop()
   const startVoice = async (sourceSessionId: SessionId): Promise<void> => {
-    ctx.sessions.open(sourceSessionId)
+    ctx.uiWorkspace.openSession(sourceSessionId)
     textSubmit.install(sourceSessionId)
     await controller.start(sourceSessionId)
     history.record(sourceSessionId)
@@ -133,17 +138,7 @@ export function apply(ctx: ClientContext): void {
     recordTaskActivity: (id, at, parentSessionId) => { history.recordTaskActivity(id, at, parentSessionId) },
     openSession: (id) => {
       if (isEffectivelyArchivedInContext(ctx, id)) return
-      const sessions = ctx.sessions as typeof ctx.sessions & {
-        subagentAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
-        navigationAddress?: (sessionId: SessionId) => { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' } | undefined
-        openSubagent?: (address: { readonly parentSessionId: SessionId; readonly childSessionId: SessionId; readonly mode: 'one-shot' | 'continuable' }) => void
-      }
-      const address = sessions.navigationAddress?.(id) ?? sessions.subagentAddress?.(id)
-      if (address !== undefined && sessions.openSubagent !== undefined) {
-        sessions.openSubagent(address)
-        return
-      }
-      ctx.sessions.open(id)
+      ctx.uiWorkspace.openSession(ctx.sessions.subagentAddress(id) ?? id)
     },
     cancelTask: (id) => { controller.cancelTask(id) },
   })
@@ -155,8 +150,8 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => () => { textSubmit.dispose() }, 'ui-voice: text submit bridge teardown')
   ctx.effect(() => () => { history.dispose() }, 'ui-voice: history persistence teardown')
   enableChildModelSelection(ctx)
-  ctx.conversationEvents.register(voiceUtteranceDefinition)
-  ctx.conversationEvents.register(voiceDelegationDefinition)
+  ctx.uiConversation.events.register(voiceUtteranceDefinition)
+  ctx.uiConversation.events.register(voiceDelegationDefinition)
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
     name: 'conversation.input.right',
     id: 'voice',
@@ -190,9 +185,12 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: delegationInjected,
   }, VoiceDelegationView))
-  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-    name: 'settings.plugin.item',
-    key: VOCO_SETTINGS_NAMESPACE,
+  const t = ctx.locale.bind(NS)
+  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: VOCO_SETTINGS_NAMESPACE,
+    order: 20,
+    label: () => t('settings.title'),
     locale: NS,
     inject: () => vocoSettings.inject(),
   }, VocoSettingsCard))
@@ -200,8 +198,8 @@ export function apply(ctx: ClientContext): void {
 
 /** Archive-manager archives one requested ID; Voice treats that state as
  * inherited by every descendant without mutating the third-party archive set. */
-function isEffectivelyArchivedInContext(ctx: ClientContext, sessionId: SessionId): boolean {
-  const workspaces = (ctx as ClientContext & {
+function isEffectivelyArchivedInContext(ctx: Context, sessionId: SessionId): boolean {
+  const workspaces = (ctx as Context & {
     workspaces?: { list: { getSnapshot(): { readonly archivedSessionIds: readonly SessionId[] } } }
   }).workspaces
   if (workspaces === undefined) return false

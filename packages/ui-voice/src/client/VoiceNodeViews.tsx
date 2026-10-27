@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { VoiceClientSnapshot } from './voice-controller.ts'
 import type { VoiceDelegationChatData } from './voice-definitions.ts'
@@ -86,10 +89,7 @@ export function VoiceDelegationView({ node, sessionId, useSessions, useWorkspace
     archivedSessionIds,
     sessions.byId,
     id => id === node.data.taskSessionId ? sessionId : undefined,
-  ) && (sessions.ids.includes(node.data.taskSessionId)
-    || Object.values(sessions.subagentsByParent).some(catalog => catalog.entries.some(entry => (
-      entry.kind === 'child' && entry.id === node.data.taskSessionId
-    )))))
+  ) && sessions.byId[node.data.taskSessionId] !== undefined)
   const connected = useVoice(voice => voice.sessionId === sessionId && voice.state !== 'off' && voice.state !== 'error')
   const cancellable = connected && !isTerminalTaskStatus(node.data.status)
   return (

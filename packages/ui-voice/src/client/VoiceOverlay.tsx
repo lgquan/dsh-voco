@@ -1,3 +1,4 @@
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { VoiceClientSnapshot, VoiceClientState } from './voice-controller.ts'
 import type { VoiceKey } from './locales.ts'

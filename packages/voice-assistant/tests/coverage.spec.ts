@@ -58,7 +58,15 @@ interface FakeSession {
     readonly agentPreset?: string
   }
   readonly events: SessionEvent[]
+  readonly snapshotEvents: () => readonly SessionEvent[]
   readonly append: (type: string, data: unknown, options?: unknown) => void
+}
+
+function persistenceFor(session: FakeSession) {
+  const read = vi.fn(async () => ({ events: session.events }))
+  const close = vi.fn(async () => {})
+  const open = vi.fn(async () => ({ header: session.header, read, close }))
+  return { open, read, close }
 }
 
 interface CapturedTask {
@@ -116,7 +124,7 @@ interface Harness {
     nextHandleDispose: { throws: boolean; error: unknown }
   }
   readonly services: {
-    persistence: { inspect: ReturnType<typeof vi.fn> } | undefined
+    persistence: ReturnType<typeof persistenceFor> | undefined
     presets: {
       mount: ReturnType<typeof vi.fn>
       composeFrom: ReturnType<typeof vi.fn>
@@ -172,6 +180,7 @@ function makeHarness(config: Parameters<typeof apply>[1] = {}): Harness {
       id,
       header: { ...meta },
       events,
+      snapshotEvents: () => events,
       append(type, data, options) {
         events.push({
           type,
@@ -420,14 +429,15 @@ describe('voice assistant branch coverage', () => {
     })
 
     harness.sessions.delete(sessionId)
-    harness.services.persistence = { inspect: vi.fn(async () => ({ events: session.events })) }
+    harness.services.persistence = persistenceFor(session)
     expect(await harness.loadMemory(sessionId)).toEqual({
       items: [
         { role: 'assistant', text: 'second' },
         { role: 'user', text: 'third' },
       ],
     })
-    expect(harness.services.persistence.inspect).toHaveBeenCalledWith(sessionId)
+    expect(harness.services.persistence.open).toHaveBeenCalledWith(sessionId, 'read')
+    expect(harness.services.persistence.close).toHaveBeenCalledOnce()
 
     const disabled = makeHarness({ restoreConversation: false })
     expect(await disabled.loadMemory(sessionId)).toBeUndefined()
@@ -960,9 +970,7 @@ describe('voice assistant branch coverage', () => {
     const resumed = makeHarness()
     const resumedId = SessionId('resume-defaults')
     const resumedRecord = resumed.makeSession(resumedId)
-    resumed.services.persistence = {
-      inspect: vi.fn(async () => ({ meta: resumedRecord.header, events: resumedRecord.events })),
-    }
+    resumed.services.persistence = persistenceFor(resumedRecord)
     const resumedVoice = await resumed.open(resumedId, 'frontend-agent')
     await startDelegation(resumed, resumedVoice)
     expect(resumed.created[0]?.options).toEqual({
@@ -1037,9 +1045,7 @@ describe('voice assistant branch coverage', () => {
     const mount = vi.fn(async () => {})
     const composeFrom = vi.fn()
     harness.services.presets = { mount, composeFrom }
-    harness.services.persistence = {
-      inspect: vi.fn(async () => ({ meta: record.header, events: record.events })),
-    }
+    harness.services.persistence = persistenceFor(record)
     const attachSession = vi.fn(async () => {})
     harness.services.workspaceRegistry = {
       list: vi.fn(() => [{ sessionIds: [sessionId], attachSession }]),

@@ -5,7 +5,7 @@ import { loadEnvFile } from 'node:process'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import type { VoiceProvider } from '@flowingspring/dsh-voice'
 import { DEFAULT_EDGE_TTS_RATE } from './edge-tts.ts'
@@ -14,7 +14,7 @@ import { NodeSpeechBackend } from './node-backend.ts'
 
 export const name = 'voice-local'
 export const inject = ['voice']
-export const VOICE_LOCAL_SETTINGS_NAMESPACE = settingsNamespace('voice-local')
+export const VOICE_LOCAL_SETTINGS_NAMESPACE = 'voice-local'
 export const SILICONFLOW_API_KEY_REF = credentialRef('SILICONFLOW_API_KEY')
 
 export interface Config {
@@ -77,16 +77,14 @@ export function apply(ctx: Context, config: Config = {}): () => void {
   // process.env here would make the credentials UI correctly treat it as a
   // read-only inherited value and disable its input.
   if (ctx.get('credentials') === undefined) loadProjectEnv()
-  let current = (): Config => config
-  installSettingsSection(ctx, VOICE_LOCAL_SETTINGS_NAMESPACE, Config, config, {
-    setSource: source => { current = source },
-    onChange: () => {},
+  ctx.inject(['settings'], (child) => {
+    child.effect(() => child.settings.configure({ auto: false }, ctx.fiber))
   })
   const provider: VoiceProvider = {
     id: 'local',
     available: () => true,
     connect: async ({ voiceSessionId, emit }) => {
-      const active = current()
+      const active = config
       const backend = new NodeSpeechBackend({
         apiKey: await resolveSiliconFlowApiKey(ctx, active),
         endpoint: active.endpoint ?? 'https://api.siliconflow.cn/v1/audio/transcriptions',

@@ -1,12 +1,12 @@
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { describe, expect, it, vi } from 'vitest'
 import type { VoiceClientSnapshot } from '../src/client/voice-controller.ts'
 import { VoiceTextSubmitBridge, type VoiceTextInput } from '../src/client/voice-text-submit.ts'
 
 const SESSION = 'typed-session' as SessionId
 
-function input(draft: string, imageIds: readonly unknown[] = []) {
-  const state = { draft, imageIds }
+function input(draft: string, attachmentIds: readonly unknown[] = []) {
+  const state = { draft, attachmentIds }
   const value: VoiceTextInput = {
     state: { getSnapshot: () => state },
     setDraft: vi.fn((text: string) => { state.draft = text }),

@@ -29,41 +29,23 @@
       "@flowingspring/dsh-voice": [
         "./packages/voice/src"
       ],
-      "@flowingspring/dsh-voice/invariant": [
-        "./packages/voice/src/invariant.ts"
-      ],
       "@flowingspring/dsh-voice-local": [
         "./packages/voice-local/src"
-      ],
-      "@flowingspring/dsh-voice-local/invariant": [
-        "./packages/voice-local/src/invariant.ts"
       ],
       "@flowingspring/dsh-voice-assistant": [
         "./packages/voice-assistant/src"
       ],
-      "@flowingspring/dsh-voice-assistant/invariant": [
-        "./packages/voice-assistant/src/invariant.ts"
-      ],
       "@flowingspring/dsh-voice-web": [
         "./packages/voice-web/src"
       ],
-      "@flowingspring/dsh-voice-web/invariant": [
-        "./packages/voice-web/src/invariant.ts"
-      ],
       "@flowingspring/dsh-client-ui-voice": [
         "./packages/ui-voice/src"
-      ],
-      "@flowingspring/dsh-client-ui-voice/invariant": [
-        "./packages/ui-voice/src/invariant.ts"
       ],
       "@flowingspring/dsh-client-ui-voice/client": [
         "./packages/ui-voice/src/client"
       ],
       "@flowingspring/dsh-voco": [
         "./packages/voice-app/src"
-      ],
-      "@flowingspring/dsh-voco/invariant": [
-        "./packages/voice-app/src/invariant.ts"
       ],
       "@flowingspring/dsh-llm-tool-call-compat": [
         "./packages/llm-tool-call-compat/src"

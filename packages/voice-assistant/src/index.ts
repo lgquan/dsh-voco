@@ -8,9 +8,14 @@ import z from '@deepseek-ai/schemastery'
 import { installModelSelection, type Agent, type AgentHandle, type ModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage, ReasoningEffortId, type LlmRuntime } from '@deepseek-ai/dsh-llm'
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
-import { foldSubagentDescriptor, snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
-import { foldRequestHeader, KNOWN_SESSION_EVENT_TYPES, SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import {
+  foldSubagentDescriptor, snapshotSubagentDescriptor, SUBAGENT_DESCRIPTOR_VERSION,
+} from '@deepseek-ai/dsh-subagent'
+import {
+  foldRequestHeader, KNOWN_SESSION_EVENT_TYPES, SessionId,
+  type Session, type SessionEvent, type SessionHeader,
+} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-workspace'
 import {
@@ -33,6 +38,12 @@ import { installVoiceMessageTool, type VoiceMessageInput, type VoiceMessageRecei
 
 export const name = 'voice-assistant'
 export const inject = ['agentDefaultModel', 'agents', 'sessions', 'systemPrompt', 'tools', 'voice']
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'voice-assistant': { readonly kind: 'voice-assistant' }
+  }
+}
 
 /** Driver configuration. */
 export interface Config {
@@ -675,6 +686,29 @@ function sameModelSelection(left: ModelSelection, right: ModelSelection): boolea
     && left.reasoningEffort === right.reasoningEffort
 }
 
+function foldSessionPreset(header: SessionHeader, events: readonly SessionEvent[]): string | undefined {
+  let preset = header.agentPreset
+  for (const event of events) {
+    if (event.type === 'agent-preset/selected') preset = event.data.agentPreset
+  }
+  return preset
+}
+
+async function readPersistedSession(
+  ctx: Context,
+  sessionId: SessionId,
+): Promise<{ readonly header: SessionHeader; readonly events: readonly SessionEvent[] } | undefined> {
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence === undefined) return undefined
+  const handle = await persistence.open(sessionId, 'read')
+  try {
+    const result = await handle.read()
+    return { header: handle.header, events: result.events }
+  } finally {
+    await handle.close()
+  }
+}
+
 const REWRITE_SYSTEM_PROMPT = `你是语音模式下的自然回复编辑器。你的任务是把后台处理结果改写成准确、自然、适合直接朗读的中文回复。
 
 必须遵守：
@@ -763,7 +797,7 @@ async function generateVoiceTitleCandidate(ctx: Context, input: string): Promise
       const selection = ctx.agentDefaultModel.currentSelection()
       const message = createUserMessage({
         content: [{ type: 'text', text: `用户第一条有效语音请求：${input}` }],
-        source: { kind: 'plugin', plugin: 'voice-assistant' },
+        source: { kind: 'voice-assistant' },
       })
       let output = ''
       for await (const chunk of llm.stream({
@@ -852,11 +886,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (loading !== undefined) return loading
     const load = (async (): Promise<ChildModelSelection | undefined> => {
       const session = ctx.sessions.get(sessionId)
-      const persisted = session === undefined
-        ? await ctx.get('sessionPersistence')?.inspect(sessionId)
-        : undefined
-      const header = session?.header ?? persisted?.meta
-      const events = session?.events ?? persisted?.events
+      const persisted = session === undefined ? await readPersistedSession(ctx, sessionId) : undefined
+      const header = session?.header ?? persisted?.header
+      const events = session?.snapshotEvents() ?? persisted?.events
       if (header?.origin !== 'subagent' || header.parentSession === undefined || events === undefined) return undefined
       if (foldSubagentDescriptor(events)?.provider !== 'voice-assistant') return undefined
       const logged = foldRequestHeader(events)?.config
@@ -892,7 +924,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
   const loadConversationMemory = async (sessionId: SessionId): Promise<VoiceConversationMemory | undefined> => {
     const live = ctx.sessions.get(sessionId)
-    const events = live?.events ?? (await ctx.get('sessionPersistence')?.inspect(sessionId))?.events
+    const events = live?.snapshotEvents() ?? (await readPersistedSession(ctx, sessionId))?.events
     if (events === undefined) return undefined
     const items = events.flatMap(event => {
       if (event.type !== 'voice/utterance-end' || event.data.state !== 'completed') return []
@@ -946,7 +978,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         records.push({
           workspacePath,
           taskId: String(observation.taskId),
-          sequence: session.events.at(-1)?.seq,
+          sequence: session.snapshotEvents().at(-1)?.seq,
           createdAt: Date.now(),
           detail: observationDetail,
         })
@@ -1044,7 +1076,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       original,
       '</处理结果>',
     ].join('\n')
-    const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'plugin', plugin: 'voice-assistant' } })
+    const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: { kind: 'voice-assistant' } })
     let rewritten = ''
     let pending = ''
     try {
@@ -1159,10 +1191,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (binding.agent !== undefined) return binding.agent
     const persistence = ctx.get('sessionPersistence')
     if (persistence === undefined) throw new Error(`voice-assistant: Agent session "${binding.sessionId}" is not live and persistence is unavailable`)
-    const inspected = await persistence.inspect(binding.sessionId)
-    const header = foldRequestHeader(inspected.events)
+    const persisted = await readPersistedSession(ctx, binding.sessionId)
+    if (persisted === undefined) throw new Error(`voice-assistant: Agent session "${binding.sessionId}" could not be read`)
+    const header = foldRequestHeader(persisted.events)
     const defaults = ctx.agentDefaultModel.currentSelection()
-    const presetId = resolveSessionPreset({ header: inspected.meta, events: inspected.events })
+    const presetId = foldSessionPreset(persisted.header, persisted.events)
     const presets = ctx.get('agentPresets')
     const handle = await ctx.agents.resume({
       resumeSessionId: binding.sessionId,
@@ -1182,7 +1215,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     readonly seq: number
   } | undefined => {
     const session = ctx.sessions.get(binding.sessionId)
-    const event = session?.events.findLast(candidate => candidate.type === 'request/header')
+    const event = session?.snapshotEvents().findLast(candidate => candidate.type === 'request/header')
     if (event?.type !== 'request/header') return undefined
     const config = event.data.header.config
     return {
@@ -1253,7 +1286,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (messages.length > 0) sections.push(`旧 Agent 最近消息：\n${messages.join('\n')}`)
     }
     const source = requireSourceSession(binding)
-    const observations = source.events.flatMap(event => {
+    const observations = source.snapshotEvents().flatMap(event => {
       if (event.type !== 'voice/task-observation') return []
       const detail = event.data.detail?.trim() ?? ''
       return detail === '' ? [] : [`${event.data.status}：${detail}`]
@@ -1282,7 +1315,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (sourceSession === undefined) {
       throw new Error(`voice-assistant: source session "${binding.sessionId}" is not live`)
     }
-    const presetId = resolveSessionPreset(sourceSession)
+    const presetId = foldSessionPreset(sourceSession.header, sourceSession.snapshotEvents())
     const presets = ctx.get('agentPresets')
     let disposeVoiceMessage: (() => void) | undefined
     const [handle, generatedLabel] = await Promise.all([ctx.agents.create({
@@ -1321,11 +1354,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           agentProvider: selection.provider,
           agentModel: selection.model,
         })
-      : snapshotSubagentDescriptor({
+      : {
+          version: SUBAGENT_DESCRIPTOR_VERSION,
           mode,
           provider: 'voice-assistant',
           label: normalizedLabel,
-        })
+        }
     const childSession = handle.agent.session
     if (titleService !== undefined) pinVoiceSessionTitle(ctx, childSession, normalizedLabel, titleService)
     const appendDescriptor = childSession.append as unknown as (type: string, data: unknown) => void
@@ -1348,7 +1382,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (handoff !== undefined && handoff.trim() !== '') {
       handle.agent.inject(createUserMessage({
         content: [{ type: 'text', text: `<voice_task_handoff>\n${handoff}\n</voice_task_handoff>` }],
-        source: { kind: 'plugin', plugin: 'voice-assistant' },
+        source: { kind: 'voice-assistant' },
       }))
     }
     return { agent: handle.agent, disposeVoiceMessage }
@@ -1479,9 +1513,10 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     }
     const sourceSession = requireSourceSession(binding)
-    const previousState = sourceSession.events.findLast(event => event.type === 'voice/agent-binding-state')
-    const previousBound = sourceSession.events.findLast(event => event.type === 'voice/task-session-bound')
-    const previousDelegation = sourceSession.events.findLast(event => event.type === 'voice/task-delegated')
+    const sourceEvents = sourceSession.snapshotEvents()
+    const previousState = sourceEvents.findLast(event => event.type === 'voice/agent-binding-state')
+    const previousBound = sourceEvents.findLast(event => event.type === 'voice/task-session-bound')
+    const previousDelegation = sourceEvents.findLast(event => event.type === 'voice/task-delegated')
     const previousTaskSessionId = previousState?.type === 'voice/agent-binding-state'
       ? previousState.data.agentSessionId
       : previousBound?.type === 'voice/task-session-bound'
@@ -1531,7 +1566,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ): void => {
     const memory = optionalWorkspaceMemory(ctx)
     if (memory === undefined) return
-    const candidates = requireSourceSession(binding).events.flatMap(event => {
+    const candidates = requireSourceSession(binding).snapshotEvents().flatMap(event => {
       if (event.type !== 'voice/utterance-end' || event.data.state !== 'completed') return []
       const id = String(event.data.utteranceId)
       const text = event.data.text.trim()
@@ -1577,7 +1612,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const markVoiceTurn = (binding: Binding): void => {
     if (binding.interactionMode !== 'frontend-agent' || binding.voiceTurnMarked) return
     const session = requireSourceSession(binding)
-    if (session.events.some(event => event.type === 'turn/start')) {
+    if (session.snapshotEvents().some(event => event.type === 'turn/start')) {
       binding.voiceTurnMarked = true
       return
     }
@@ -1773,7 +1808,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
           const sourceSession = requireSourceSession(binding)
           grounding = await collectGroundingContext(
-            sourceSession.events,
+            sourceSession.snapshotEvents(),
             input,
             sourceSession.header.cwd,
             evidenceCache,
@@ -1789,7 +1824,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             truncated: grounding.truncated,
             cacheHit: grounding.cacheHit,
           })
-          route = await routeFrontendInput(ctx, sourceSession.events, input, memoryReference, grounding)
+          route = await routeFrontendInput(ctx, sourceSession.snapshotEvents(), input, memoryReference, grounding)
           debugVoiceLatency('route-decision', {
             callId: String(call.id),
             action: route.action,
@@ -1804,7 +1839,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
           route = fallbackDelegation(
             input,
-            recentConversationText(requireSourceSession(binding).events),
+            recentConversationText(requireSourceSession(binding).snapshotEvents()),
           )
         }
         if (route.action === 'chat' && (actionRequiresDelegation(input)
@@ -1814,7 +1849,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             reason: actionRequiresDelegation(input) ? 'action-signal' : `grounding-${grounding.status}`,
           })
           route = fallbackDelegation(input, [
-            recentConversationText(requireSourceSession(binding).events),
+            recentConversationText(requireSourceSession(binding).snapshotEvents()),
             evidenceReference(grounding),
           ].filter(Boolean).join('\n\n').slice(0, MAX_DELEGATION_BACKGROUND_LENGTH))
         }
@@ -1890,7 +1925,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           ? undefined
           : createUserMessage({
               content: [{ type: 'text', text: `语音转写补充上下文：${transcriptContext}` }],
-              source: { kind: 'plugin', plugin: 'voice-assistant' },
+              source: { kind: 'voice-assistant' },
             })
         const task: ActiveTask = {
           id: taskId,
@@ -1945,7 +1980,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (task === undefined) throw new Error('voice-assistant task state changed during command dispatch')
         const message = createUserMessage({
           content: [{ type: 'text', text: call.command.message }],
-          source: { kind: 'plugin', plugin: 'voice-assistant' },
+          source: { kind: 'voice-assistant' },
         })
         const previousRequestText = task.requestText
         task.messageIds.add(message.id)
@@ -2028,7 +2063,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (session.interactionMode === 'speech-shell') await ensureAgent(binding)
       if (binding.voiceSessionId !== session.id) return
       if (!binding.recoveryDelivered) {
-        const lastObservation = requireSourceSession(binding).events.findLast(event => event.type === 'voice/task-observation')
+        const lastObservation = requireSourceSession(binding).snapshotEvents().findLast(event => event.type === 'voice/task-observation')
         if (lastObservation?.type === 'voice/task-observation' && lastObservation.data.status === 'interrupted') {
           binding.recoveryDelivered = true
           ctx.voice.appendTaskObservation(session.id, lastObservation.data)
@@ -2286,7 +2321,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (task !== undefined) {
         try {
           const sourceSession = requireSourceSession(binding)
-          const lastProgress = sourceSession.events.findLast(event => (
+          const lastProgress = sourceSession.snapshotEvents().findLast(event => (
             event.type === 'voice/task-observation'
             && event.data.taskId === task.id
             && event.data.voiceMessage !== undefined
@@ -2524,7 +2559,7 @@ async function routeFrontendInput(
         `用户原话：${input}`,
       ].join('\n'),
     }],
-    source: { kind: 'plugin', plugin: 'voice-assistant' },
+    source: { kind: 'voice-assistant' },
   })
   let output = ''
   try {

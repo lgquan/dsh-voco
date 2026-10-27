@@ -1,4 +1,4 @@
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 
 /** Minimal session shape needed to walk the Host-owned parent chain. */
 export interface SessionArchiveSummary {

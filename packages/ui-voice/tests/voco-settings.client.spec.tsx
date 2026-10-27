@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { VocoSettingsCard, type VocoSettingsCardProps } from '../src/client/VocoSettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -8,39 +7,26 @@ import { VocoSettingsController, type VocoSettingsState } from '../src/client/vo
 
 afterEach(cleanup)
 
-function scope(): SettingsScope<unknown> {
-  const snapshot: SettingsScopeSnapshot<unknown> = {
-    status: 'ready', value: {}, base: {}, user: undefined, revision: 0, writable: true, mode: 'host',
-  }
-  return {
-    getSnapshot: () => snapshot,
-    subscribe: () => () => undefined,
-    set: vi.fn(),
-    unset: vi.fn(),
-  }
-}
-
 function response(configured: boolean) {
   return {
-    result: {
-      ok: true as const,
-      value: { credentials: { SILICONFLOW_API_KEY: { configured, writable: true } } },
-    },
+    ok: true as const,
+    value: { SILICONFLOW_API_KEY: { configured, writable: true } },
   }
 }
 
 describe('Voco settings controller', () => {
   it('stages a write-only key and saves it through the credentials API', async () => {
     const describe = vi.fn().mockResolvedValueOnce(response(false)).mockResolvedValue(response(true))
-    const set = vi.fn().mockResolvedValue({ result: { ok: true, value: {} } })
-    const controller = new VocoSettingsController(scope(), { credentials: { describe, set } } as never)
+    const set = vi.fn().mockResolvedValue({ ok: true, value: {} })
+    const controller = new VocoSettingsController({ describe, set } as never)
     const face = controller.inject()
 
+    await waitFor(() => { expect(face.hooks.vocoSettings.getSnapshot().available).toBe(true) })
     face.editApiKey('  sk-test-value  ')
     expect(face.hooks.vocoSettings.getSnapshot()).toMatchObject({ dirty: true, apiKey: '  sk-test-value  ' })
     face.save()
 
-    await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'SILICONFLOW_API_KEY', value: 'sk-test-value' }) })
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('SILICONFLOW_API_KEY', 'sk-test-value') })
     await waitFor(() => {
       expect(face.hooks.vocoSettings.getSnapshot()).toMatchObject({
         dirty: false, apiKey: '', apiKeyConfigured: true, saving: false,
@@ -51,11 +37,12 @@ describe('Voco settings controller', () => {
   it('keeps the draft when a credential write is rejected', async () => {
     const describe = vi.fn().mockResolvedValue(response(true))
     const set = vi.fn().mockResolvedValue({
-      result: { ok: false, error: { code: 'credential-rejected', message: 'rejected' } },
+      ok: false, error: { code: 'credential-rejected', message: 'rejected' },
     })
-    const controller = new VocoSettingsController(scope(), { credentials: { describe, set } } as never)
+    const controller = new VocoSettingsController({ describe, set } as never)
     const face = controller.inject()
 
+    await waitFor(() => { expect(face.hooks.vocoSettings.getSnapshot().available).toBe(true) })
     face.editApiKey('replacement-key')
     face.save()
 

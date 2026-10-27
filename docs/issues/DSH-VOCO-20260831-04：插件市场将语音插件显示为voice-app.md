@@ -6,7 +6,7 @@
 - 复现方式：在 dsh-market 搜索 `dsh-voco`
 - 相关模块或代码：`awesome-dsh-plugin/data/plugins/lgquan__dsh-voco--packages-voice-app.yml`
 - 状态：处理中
-- 验证情况：仓库根入口已实施并通过自动化、打包安装和真实 Web 启动验证；根包已发布到 NPM；等待市场更正 PR 合并后完成最终验证
+- 验证情况：仓库根入口已实施并通过自动化、打包安装和真实 Web 启动验证；根包已发布到 NPM；市场更正 PR 已合并，完整 NPM 探测和部署仍在运行，等待实时市场切换为 NPM 后完成最终安装验证
 
 ## 问题描述
 
@@ -101,6 +101,9 @@ name: lgquan/dsh-voco
 - 2026-09-02：发布 `@flowingspring/dsh-voco@0.3.13` 成功。NPM registry 的 `latest` 已为 `0.3.13`，远程 manifest 的 `main`/`types` 分别为 `lib/index.js` 和 `lib/types/index.d.ts`；市场主索引仍显示旧 `v0.3.8` GitHub tarball，原因是 PR #4109 尚未合并或索引尚未刷新。
 - 2026-09-02：创建并发布 GitHub Release `v0.3.13`，上传 `flowingspring-dsh-voco-0.3.13.tgz`；README 中的 Release 链接和备用 tarball 下载地址现已可用。市场主索引仍需等待 PR #4109 合并后刷新为 NPM 安装命令。
 - 2026-09-02：检查 PR #4109 的失败日志，确认失败原因是条目 schema 不允许手写 `npm` 字段；市场通过 `scripts/probe-npm.mjs` 从仓库根 `package.json` 自动解析并校验 NPM 包。删除 `npm` 字段后提交 `57a8785`，常规 `PR check` 与 `Submission gate` 均已通过。PR 仍等待维护者合并，合并后需等待市场索引刷新并复核 `plugins.json` 的 NPM 安装命令。
+- 2026-09-02：PR #4109 于北京时间 11:49:24 合并；合并触发的 push 构建于约 11:52 成功，但该类构建按市场工作流设计只部署现有探测缓存，不重新探测 NPM。因此 12:17 读取实时 `plugins.json` 时，`dsh-voco` 仍为 `npm: null`，安装命令仍是 `dsh plugin --profile web add github:lgquan/dsh-voco`。这说明合并后约半小时内安装慢不是 NPM 包结构再次失效，而是市场尚未完成 NPM 识别。
+- 2026-09-02：市场维护者于北京时间 11:54:47 手动触发完整探测任务 [build-site #33588813538](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/actions/runs/33588813538)。截至 12:17，任务的 `Build` 步骤仍在运行，后续 Pages 部署和 NPM catalog 发布尚未开始；该任务设置 `PROBE_ALL=1`，完成后应重新读取仓库根 `package.json`，识别 `@flowingspring/dsh-voco` 并生成 NPM 安装命令。
+- 2026-09-02：卸载后的真实 Web profile 中，`package.json` 和 bundle stack 已不再包含 Voco，但 `pnpm-lock.yaml` 仍保留旧 `v0.3.8` GitHub tarball importer。隔离副本以 frozen lockfile 复现 `ERR_PNPM_OUTDATED_LOCKFILE`；随后按 DSH 实际行为执行普通 `pnpm add @flowingspring/dsh-voco@0.3.13 --config.minimumReleaseAge=0` 成功，并自动把锁记录更新为 NPM `0.3.13`。因此无需预先手工删除真实 profile 的锁文件；待市场显示 NPM 命令后再安装即可，同时保留对真实市场安装结果的最终验证。
 
 ## 后续低优先级优化
 

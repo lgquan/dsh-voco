@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { VoiceHistorySnapshot } from './voice-history.ts'
 import css from './VoiceSessionMarkers.module.css'
 

@@ -1,6 +1,9 @@
 import type {
-  ChatConversationViewNode, ConversationNodeDefinition, SessionId,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  ConversationNodeDefinitionInput,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-session/types'
 import type {
   TaskObservation, VoiceTaskId, VoiceUtteranceId,
 } from '@flowingspring/dsh-voice'
@@ -24,7 +27,7 @@ export interface VoiceDelegationChatData {
   readonly lastActivityAt?: number
 }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
     /** One user ASR or assistant TTS transcript produced in Voice Mode. */
     'voice-utterance': VoiceUtteranceChatData
@@ -37,7 +40,7 @@ type VoiceUtteranceState = VoiceUtteranceChatData
 type VoiceDelegationState = VoiceDelegationChatData
 
 /** Fold one streamed utterance into a stable Chat node. */
-export const voiceUtteranceDefinition: ConversationNodeDefinition<VoiceUtteranceState> = {
+export const voiceUtteranceDefinition: ConversationNodeDefinitionInput<VoiceUtteranceState> = {
   kind: 'voice-utterance',
   target: 'chat',
   match: (event) => {
@@ -88,7 +91,7 @@ export const voiceUtteranceDefinition: ConversationNodeDefinition<VoiceUtterance
 }
 
 /** Fold a delegated task and all observations into one navigation card. */
-export const voiceDelegationDefinition: ConversationNodeDefinition<VoiceDelegationState> = {
+export const voiceDelegationDefinition: ConversationNodeDefinitionInput<VoiceDelegationState> = {
   kind: 'voice-delegation',
   target: 'chat',
   match: (event) => {

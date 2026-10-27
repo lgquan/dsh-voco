@@ -5,8 +5,51 @@ import { describe, expect, it } from 'vitest'
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const sourcePackageRoot = resolve(repositoryRoot, 'packages/voice-app')
 const packagesRoot = resolve(sourcePackageRoot, '..')
+const supportedDshPeerRange = '^0.2.1-rc.2'
+const supportedDshDevelopmentVersion = '0.2.1-rc.2'
+const removedDshPackages = new Set([
+  '@deepseek-ai/dsh-agent-presets',
+  '@deepseek-ai/dsh-client-runtime',
+])
+
+type PackageManifest = {
+  name?: string
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  peerDependencies?: Record<string, string>
+}
+
+async function readWorkspaceManifests(): Promise<PackageManifest[]> {
+  const directories = await readdir(packagesRoot, { withFileTypes: true })
+  const paths = [
+    resolve(repositoryRoot, 'package.json'),
+    ...directories
+      .filter(entry => entry.isDirectory())
+      .map(entry => resolve(packagesRoot, entry.name, 'package.json')),
+  ]
+
+  return Promise.all(paths.map(path => readFile(path, 'utf8').then(text => JSON.parse(text) as PackageManifest)))
+}
 
 describe('dsh-voco distribution interface', () => {
+  it('targets the current DSH package graph in every workspace manifest', async () => {
+    const manifests = await readWorkspaceManifests()
+
+    for (const manifest of manifests) {
+      for (const field of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
+        for (const [name, range] of Object.entries(manifest[field] ?? {})) {
+          if (!name.startsWith('@deepseek-ai/dsh-')) continue
+
+          expect(removedDshPackages, `${manifest.name} must not depend on removed package ${name}`).not.toContain(name)
+          const expected = field === 'peerDependencies'
+            ? supportedDshPeerRange
+            : supportedDshDevelopmentVersion
+          expect(range, `${manifest.name} ${field}.${name}`).toBe(expected)
+        }
+      }
+    }
+  })
+
   it('keeps every internal workspace package private', async () => {
     const directories = await readdir(packagesRoot, { withFileTypes: true })
     const manifests = await Promise.all(directories
@@ -59,6 +102,15 @@ describe('dsh-voco distribution interface', () => {
       '@flowingspring/dsh-voco/voice-web',
       '@flowingspring/dsh-voco',
     ])
+    expect(patch).toContain('inject: [webServer, webStartup]')
+    expect(patch).toContain('trustedHosts: !!js ctx.webStartup.trustedHosts')
+    expect(patch).not.toContain('webRuntime')
+  })
+
+  it('declares the nested remote service used by the browser settings bridge', async () => {
+    const client = await readFile(resolve(packagesRoot, 'ui-voice/src/client/index.ts'), 'utf8')
+
+    expect(client).toMatch(/export const inject = \[[\s\S]*'remote\.credentials'/)
   })
 
   it('keeps the repository-root installation entry aligned with the public package', async () => {

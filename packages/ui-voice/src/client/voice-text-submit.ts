@@ -1,9 +1,9 @@
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { VoiceClientSnapshot } from './voice-controller.ts'
 
 interface VoiceTextInputState {
   readonly draft: string
-  readonly imageIds: readonly unknown[]
+  readonly attachmentIds: readonly unknown[]
 }
 
 export interface VoiceTextInput {
@@ -44,7 +44,7 @@ export class VoiceTextSubmitBridge {
       const active = voice.sessionId === sessionId
         && voice.state !== 'off'
         && voice.state !== 'error'
-      if (!active || state.draft.trim() === '' || state.imageIds.length > 0) {
+      if (!active || state.draft.trim() === '' || state.attachmentIds.length > 0) {
         originalSubmit(mode)
         return
       }
